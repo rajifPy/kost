@@ -5,7 +5,7 @@ import TenantManagement from '../../components/TenantManagement'
 import { useRouter } from 'next/router'
 
 export default function AdminDashboard() {
-  const [mounted, setMounted] = useState(false) // SSR protection
+  const [mounted, setMounted] = useState(false)
   const [rooms, setRooms] = useState([])
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -25,7 +25,6 @@ export default function AdminDashboard() {
   const [authLoading, setAuthLoading] = useState(true)
   const router = useRouter()
 
-  // SSR Protection - Only render on client
   useEffect(() => {
     setMounted(true)
     checkAuth()
@@ -56,7 +55,6 @@ export default function AdminDashboard() {
   async function fetchData() {
     setLoading(true)
     try {
-      // Fetch rooms
       const { data: roomsData, error: roomsError } = await supabase
         .from('rooms')
         .select('*')
@@ -67,8 +65,6 @@ export default function AdminDashboard() {
         throw roomsError
       }
 
-      // Fetch payments with explicit foreign key specification
-      // This prevents the "more than one relationship" error
       const { data: paymentsData, error: paymentsError } = await supabase
         .from('payments')
         .select(`
@@ -76,18 +72,13 @@ export default function AdminDashboard() {
           tenant:tenant_id (
             name, 
             phone, 
-            room_number,
-            room:room_id (
-              number,
-              title
-            )
+            room_number
           )
         `)
         .order('created_at', { ascending: false })
       
       if (paymentsError) {
         console.error('Payments fetch error:', paymentsError)
-        // Don't throw error for payments - just log and continue with empty array
         setPayments([])
       } else {
         setPayments(paymentsData || [])
@@ -101,7 +92,6 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Fetch error:', error)
       alert('Error fetching data: ' + error.message)
-      // Set empty arrays to prevent crashes
       setRooms([])
       setPayments([])
     } finally {
@@ -117,13 +107,11 @@ export default function AdminDashboard() {
     
     try {
       for (let file of files) {
-        // Validate file size (5MB max)
         if (file.size > 5 * 1024 * 1024) {
           alert(`File ${file.name} is too large. Max 5MB allowed.`)
           continue
         }
 
-        // Validate file type
         if (!file.type.startsWith('image/')) {
           alert(`File ${file.name} is not an image.`)
           continue
@@ -142,7 +130,6 @@ export default function AdminDashboard() {
         
         if (error) {
           console.error('Upload error for', fileName, error)
-          // Check if it's a bucket not found error
           if (error.message.includes('not found') || error.message.includes('bucket')) {
             alert('Storage bucket "room-images" not found. Please create it in Supabase Dashboard.')
             break
@@ -189,7 +176,6 @@ export default function AdminDashboard() {
     }
   }
 
-  // New function to handle edit room action
   function handleEditRoom(room) {
     console.log('Editing room:', room.number)
     setEditingRoom({
@@ -201,7 +187,6 @@ export default function AdminDashboard() {
   async function handleAddRoom(e) {
     e.preventDefault()
     
-    // Validation
     if (!newRoom.number.trim()) {
       alert('Room number is required')
       return
@@ -218,7 +203,6 @@ export default function AdminDashboard() {
     try {
       setImageUploading(true)
       
-      // Upload images first
       const imageUrls = await uploadImages(roomImages)
       
       console.log('Adding room with data:', {
@@ -242,7 +226,6 @@ export default function AdminDashboard() {
         throw error
       }
       
-      // Reset form
       setNewRoom({ number: '', title: '', description: '', price: '', is_available: true })
       setRoomImages([])
       setShowAddRoom(false)
@@ -259,7 +242,6 @@ export default function AdminDashboard() {
   async function handleUpdateRoom(e) {
     e.preventDefault()
     
-    // Validation
     if (!editingRoom.number.trim()) {
       alert('Room number is required')
       return
@@ -276,7 +258,6 @@ export default function AdminDashboard() {
     try {
       setImageUploading(true)
       
-      // Upload new images if any
       const newImageUrls = await uploadImages(editRoomImages)
       const allImages = [...(editingRoom.images || []), ...newImageUrls]
       
@@ -324,7 +305,6 @@ export default function AdminDashboard() {
     try {
       console.log('Deleting room:', room.number)
       
-      // Check if room has active tenants
       const { data: tenants, error: tenantError } = await supabase
         .from('tenants')
         .select('id, name')
@@ -376,7 +356,6 @@ export default function AdminDashboard() {
       console.log('Payment verified successfully:', data)
       await fetchData()
       
-      // Show success message with WhatsApp status
       const message = data.whatsapp_notification?.success 
         ? `Payment ${action}ed successfully! WhatsApp notification sent.`
         : `Payment ${action}ed successfully! (WhatsApp notification failed: ${data.whatsapp_notification?.error || 'Unknown error'})`
@@ -424,12 +403,10 @@ export default function AdminDashboard() {
     }
   }
 
-  // SSR Protection - Don't render anything during SSR
   if (!mounted) {
     return null
   }
 
-  // Show loading while checking auth
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -450,14 +427,12 @@ export default function AdminDashboard() {
     )
   }
 
-  // Safe stats calculation with fallback
   const availableRooms = rooms.filter(r => r.is_available).length
   const occupiedRooms = rooms.length - availableRooms
   const pendingPayments = payments.filter(payment => payment.status === 'pending').length
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-primary-700">Admin Dashboard</h1>
         <button 
@@ -468,7 +443,6 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="card bg-blue-50">
           <div className="text-2xl font-bold text-blue-600">{rooms.length}</div>
@@ -488,7 +462,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b mb-6 overflow-x-auto">
         <button
           onClick={() => setActiveTab('overview')}
@@ -516,10 +489,8 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Tab Content */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Payments */}
           <div className="card">
             <h3 className="font-semibold mb-4">Recent Payments</h3>
             <div className="space-y-2">
@@ -544,7 +515,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Room Status */}
           <div className="card">
             <h3 className="font-semibold mb-4">Room Status</h3>
             <div className="space-y-2">
@@ -661,7 +631,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Add Room Modal */}
       {showAddRoom && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
@@ -673,121 +642,6 @@ export default function AdminDashboard() {
                 value={newRoom.number}
                 onChange={e => setNewRoom({...newRoom, number: e.target.value})}
                 className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
-                rows="3"
-              />
-              <input
-                type="number"
-                placeholder="Price (Rp) *"
-                required
-                min="0"
-                value={editingRoom.price}
-                onChange={e => setEditingRoom({...editingRoom, price: e.target.value})}
-                className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
-              />
-              
-              {/* Existing Images */}
-              {editingRoom.images && editingRoom.images.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium mb-2">Current Images:</label>
-                  <div className="grid grid-cols-3 gap-2 mb-3">
-                    {editingRoom.images.map((imageUrl, index) => (
-                      <div key={index} className="relative">
-                        <img
-                          src={imageUrl}
-                          alt={`Room ${index + 1}`}
-                          className="w-full h-16 object-cover rounded border"
-                          onError={(e) => {
-                            e.target.style.display = 'none'
-                            e.target.nextElementSibling.style.display = 'flex'
-                          }}
-                        />
-                        <div className="w-full h-16 bg-gray-100 rounded border items-center justify-center text-xs text-gray-500 hidden">
-                          Image not found
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeImage(imageUrl, true)}
-                          className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600 transition-colors"
-                          title="Remove image"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* Add New Images */}
-              <div>
-                <label className="block text-sm font-medium mb-2">Add More Images:</label>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  onChange={e => handleImageSelect(e, true)}
-                  className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
-                />
-                
-                {editRoomImages.length > 0 && (
-                  <div className="mt-2">
-                    <div className="text-sm font-medium mb-2">New Images ({editRoomImages.length}):</div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {Array.from(editRoomImages).map((file, index) => (
-                        <div key={index} className="relative">
-                          <img
-                            src={URL.createObjectURL(file)}
-                            alt={`New ${index + 1}`}
-                            className="w-full h-16 object-cover rounded border"
-                          />
-                          <div className="text-xs text-center truncate mt-1">{file.name}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={editingRoom.is_available}
-                  onChange={e => setEditingRoom({...editingRoom, is_available: e.target.checked})}
-                />
-                Available
-              </label>
-              
-              <div className="flex gap-2">
-                <button 
-                  type="submit" 
-                  disabled={imageUploading}
-                  className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {imageUploading ? 'Updating...' : 'Update Room'}
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setEditingRoom(null)
-                    setEditRoomImages([])
-                  }}
-                  className="px-4 py-2 border rounded flex-1 hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// CRITICAL: Prevent static generation
-export async function getServerSideProps() {
-  return { props: {} }
-}
               />
               <input
                 placeholder="Title *"
@@ -813,7 +667,6 @@ export async function getServerSideProps() {
                 className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
               />
               
-              {/* Image Upload */}
               <div>
                 <label className="block text-sm font-medium mb-2">Room Images:</label>
                 <input
@@ -880,7 +733,6 @@ export async function getServerSideProps() {
         </div>
       )}
 
-      {/* Edit Room Modal */}
       {editingRoom && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
@@ -905,3 +757,115 @@ export async function getServerSideProps() {
                 value={editingRoom.description || ''}
                 onChange={e => setEditingRoom({...editingRoom, description: e.target.value})}
                 className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
+                rows="3"
+              />
+              <input
+                type="number"
+                placeholder="Price (Rp) *"
+                required
+                min="0"
+                value={editingRoom.price}
+                onChange={e => setEditingRoom({...editingRoom, price: e.target.value})}
+                className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
+              />
+              
+              {editingRoom.images && editingRoom.images.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Current Images:</label>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    {editingRoom.images.map((imageUrl, index) => (
+                      <div key={index} className="relative">
+                        <img
+                          src={imageUrl}
+                          alt={`Room ${index + 1}`}
+                          className="w-full h-16 object-cover rounded border"
+                          onError={(e) => {
+                            e.target.style.display = 'none'
+                            e.target.nextElementSibling.style.display = 'flex'
+                          }}
+                        />
+                        <div className="w-full h-16 bg-gray-100 rounded border items-center justify-center text-xs text-gray-500 hidden">
+                          Image not found
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeImage(imageUrl, true)}
+                          className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600 transition-colors"
+                          title="Remove image"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-medium mb-2">Add More Images:</label>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={e => handleImageSelect(e, true)}
+                  className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
+                />
+                
+                {editRoomImages.length > 0 && (
+                  <div className="mt-2">
+                    <div className="text-sm font-medium mb-2">New Images ({editRoomImages.length}):</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {Array.from(editRoomImages).map((file, index) => (
+                        <div key={index} className="relative">
+                          <img
+                            src={URL.createObjectURL(file)}
+                            alt={`New ${index + 1}`}
+                            className="w-full h-16 object-cover rounded border"
+                          />
+                          <div className="text-xs text-center truncate mt-1">{file.name}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editingRoom.is_available}
+                  onChange={e => setEditingRoom({...editingRoom, is_available: e.target.checked})}
+                />
+                Available
+              </label>
+              
+              <div className="flex gap-2">
+                <button 
+                  type="submit" 
+                  disabled={imageUploading}
+                  className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {imageUploading ? 'Updating...' : 'Update Room'}
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setEditingRoom(null)
+                    setEditRoomImages([])
+                  }}
+                  className="px-4 py-2 border rounded flex-1 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export async function getServerSideProps() {
+  return { props: {} }
+}
