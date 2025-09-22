@@ -1,0 +1,58 @@
+[
+  {
+    "number": "KM1",
+    "title": "Kamar KM1 - Single AC Premium",
+    "description": "Kamar single dengan AC, meja belajar, kursi ergonomis, lemari 2 pintu, kamar mandi dalam dengan water heater, wifi unlimited 24 jam, jendela besar dengan ventilasi baik",
+    "price": 550000,
+    "is_available": true,
+    "images": []
+  },
+  {
+    "number": "KM2", 
+    "title": "Kamar KM2 - Single AC Standard",
+    "description": "Kamar single ber-AC, meja kursi belajar, lemari pakaian, kamar mandi luar bersama, wifi unlimited, dekat dengan dapur umum dan area jemuran",
+    "price": 550000,
+    "is_available": false,
+    "images": []
+  },
+  {
+    "number": "KM4",
+    "title": "Kamar KM4 - Double Fan Ekonomis", 
+    "description": "Kamar double bed dengan kipas angin, meja lipat, lemari bersama, kamar mandi luar, wifi 24 jam, cocok untuk mahasiswa budget terbatas",
+    "price": 550000,
+    "is_available": true,
+    "images": []
+  },
+  {
+    "number": "KM5",
+    "title": "Kamar KM5 - Single Fan Plus",
+    "description": "Kamar single dengan kipas angin, meja belajar ukuran besar, kursi kantor, lemari 1 pintu, rak buku, kamar mandi luar, wifi unlimited, area tenang",
+    "price": 550000,
+    "is_available": true,
+    "images": []
+  },
+  {
+    "number": "KM6",
+    "title": "Kamar KM6 - VIP Suite AC",
+    "description": "Kamar VIP dengan AC inverter, TV LED 32 inch, kulkas mini, meja kerja besar, sofa santai, lemari besar, kamar mandi dalam dengan bathtub, balkon pribadi, wifi dedicated",
+    "price": 550000,
+    "is_available": true,
+    "images": []
+  },
+  {
+    "number": "KM7",
+    "title": "Kamar KM7 - Family AC Double",
+    "description": "Kamar family dengan 2 single bed, AC split, meja belajar double, lemari besar, kamar mandi dalam, area duduk, cocok untuk 2 orang atau keluarga kecil",
+    "price": 550000,
+    "is_available": false,
+    "images": []
+  },
+  {
+    "number": "KM8",
+    "title": "Kamar KM8 - Studio AC Deluxe",
+    "description": "Kamar studio dengan AC, kitchenette mini (kompor portable, sink kecil), kulkas, meja makan lipat, sofa bed, lemari built-in, kamar mandi dalam, cocok untuk pekerja profesional",
+    "price": 550000,
+    "is_available": true,
+    "images": []
+  }
+]
