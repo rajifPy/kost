@@ -67,15 +67,20 @@ export default function AdminDashboard() {
         throw roomsError
       }
 
-      // Fetch payments with left join to handle missing tenant relationships
+      // Fetch payments with explicit foreign key specification
+      // This prevents the "more than one relationship" error
       const { data: paymentsData, error: paymentsError } = await supabase
         .from('payments')
         .select(`
           *,
-          tenants (
+          tenant:tenant_id (
             name, 
             phone, 
-            room_number
+            room_number,
+            room:room_id (
+              number,
+              title
+            )
           )
         `)
         .order('created_at', { ascending: false })
@@ -103,112 +108,6 @@ export default function AdminDashboard() {
       setLoading(false)
     }
   }
-
-  // Fixed fetchData function for dashboard.js
-async function fetchData() {
-  setLoading(true)
-  try {
-    // Fetch rooms
-    const { data: roomsData, error: roomsError } = await supabase
-      .from('rooms')
-      .select('*')
-      .order('created_at', { ascending: false })
-    
-    if (roomsError) {
-      console.error('Rooms fetch error:', roomsError)
-      throw roomsError
-    }
-
-    // Fetch payments with explicit foreign key specification
-    // This prevents the "more than one relationship" error
-    const { data: paymentsData, error: paymentsError } = await supabase
-      .from('payments')
-      .select(`
-        *,
-        tenant:tenant_id (
-          name, 
-          phone, 
-          room_number,
-          room:room_id (
-            number,
-            title
-          )
-        )
-      `)
-      .order('created_at', { ascending: false })
-    
-    if (paymentsError) {
-      console.error('Payments fetch error:', paymentsError)
-      // Don't throw error for payments - just log and continue with empty array
-      setPayments([])
-    } else {
-      setPayments(paymentsData || [])
-    }
-
-    setRooms(roomsData || [])
-    console.log('Data fetched successfully:', {
-      rooms: roomsData?.length || 0,
-      payments: paymentsData?.length || 0
-    })
-  } catch (error) {
-    console.error('Fetch error:', error)
-    alert('Error fetching data: ' + error.message)
-    // Set empty arrays to prevent crashes
-    setRooms([])
-    setPayments([])
-  } finally {
-    setLoading(false)
-  }
-}
-
-// Alternative query if the above still gives issues:
-async function fetchDataAlternative() {
-  setLoading(true)
-  try {
-    // Fetch rooms
-    const { data: roomsData, error: roomsError } = await supabase
-      .from('rooms')
-      .select('*')
-      .order('created_at', { ascending: false })
-    
-    if (roomsError) throw roomsError
-
-    // Fetch payments without join first, then manually join if needed
-    const { data: paymentsData, error: paymentsError } = await supabase
-      .from('payments')
-      .select('*')
-      .order('created_at', { ascending: false })
-    
-    if (paymentsError) {
-      console.error('Payments fetch error:', paymentsError)
-      setPayments([])
-    } else {
-      // If you need tenant info, fetch separately
-      const { data: tenantsData } = await supabase
-        .from('tenants')
-        .select('*')
-      
-      // Manually join the data
-      const enrichedPayments = paymentsData.map(payment => ({
-        ...payment,
-        tenant: payment.tenant_id 
-          ? tenantsData?.find(t => t.id === payment.tenant_id) 
-          : null
-      }))
-      
-      setPayments(enrichedPayments)
-    }
-
-    setRooms(roomsData || [])
-  } catch (error) {
-    console.error('Fetch error:', error)
-    alert('Error fetching data: ' + error.message)
-    setRooms([])
-    setPayments([])
-  } finally {
-    setLoading(false)
-  }
-}
 
   async function uploadImages(files) {
     if (!files || files.length === 0) return []
@@ -774,19 +673,6 @@ async function fetchDataAlternative() {
                 value={newRoom.number}
                 onChange={e => setNewRoom({...newRoom, number: e.target.value})}
                 className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
-              />
-              <input
-                placeholder="Title *"
-                required
-                value={newRoom.title}
-                onChange={e => setNewRoom({...newRoom, title: e.target.value})}
-                className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
-              />
-              <textarea
-                placeholder="Description"
-                value={newRoom.description}
-                onChange={e => setNewRoom({...newRoom, description: e.target.value})}
-                className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
                 rows="3"
               />
               <input
@@ -901,7 +787,28 @@ async function fetchDataAlternative() {
 // CRITICAL: Prevent static generation
 export async function getServerSideProps() {
   return { props: {} }
-}={newRoom.price}
+}
+              />
+              <input
+                placeholder="Title *"
+                required
+                value={newRoom.title}
+                onChange={e => setNewRoom({...newRoom, title: e.target.value})}
+                className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
+              />
+              <textarea
+                placeholder="Description"
+                value={newRoom.description}
+                onChange={e => setNewRoom({...newRoom, description: e.target.value})}
+                className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
+                rows="3"
+              />
+              <input
+                type="number"
+                placeholder="Price (Rp) *"
+                required
+                min="0"
+                value={newRoom.price}
                 onChange={e => setNewRoom({...newRoom, price: e.target.value})}
                 className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
               />
@@ -998,11 +905,3 @@ export async function getServerSideProps() {
                 value={editingRoom.description || ''}
                 onChange={e => setEditingRoom({...editingRoom, description: e.target.value})}
                 className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
-                rows="3"
-              />
-              <input
-                type="number"
-                placeholder="Price (Rp) *"
-                required
-                min="0"
-                value
