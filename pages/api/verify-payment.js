@@ -1,369 +1,230 @@
-// pages/api/verify-payment.js - UPDATED VERSION with Email + WhatsApp
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const supabase = createClient(supabaseUrl, serviceKey)
-
-// ✅ Check configurations
-function isWhatsAppConfigured() {
-  return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_WHATSAPP_FROM)
-}
-
-function isEmailConfigured() {
-  return !!process.env.RESEND_API_KEY
-}
-
-// ✅ Format Indonesian phone numbers
-function formatPhoneNumber(phone) {
-  if (!phone) return null
-  let cleaned = phone.replace(/[\s\-\.]/g, '')
-  
-  if (cleaned.startsWith('08')) {
-    return '+62' + cleaned.substring(1) 
-  } else if (cleaned.startsWith('62')) {
-    return '+' + cleaned  
-  } else if (cleaned.startsWith('+62')) {
-    return cleaned 
-  } else if (!cleaned.startsWith('+')) {
-    return '+62' + cleaned 
-  }
-  return cleaned
-}
-
-// ✅ Send WhatsApp notification
-async function sendWhatsAppNotification(phone, message) {
-  try {
-    if (!isWhatsAppConfigured()) {
-      return { success: false, error: 'WhatsApp service not configured' }
-    }
-
-    const formattedPhone = formatPhoneNumber(phone)
-    if (!formattedPhone) {
-      return { success: false, error: 'Invalid phone number format' }
-    }
-
-    console.log('📱 Sending WhatsApp to:', formattedPhone)
-
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://kostsaya.vercel.app'
-    
-    const response = await fetch(`${baseUrl}/api/send-whatsapp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: formattedPhone,
-        message: message
-      })
-    })
-
-    const result = await response.json()
-    
-    if (response.ok && result.success) {
-      return { success: true, sid: result.sid, phone: formattedPhone }
-    } else {
-      return { success: false, error: result.error || 'Failed to send WhatsApp' }
-    }
-    
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-}
-
-// ✅ Send Email notification
-async function sendEmailNotification(email, type, paymentData) {
-  try {
-    if (!isEmailConfigured()) {
-      return { success: false, error: 'Email service not configured' }
-    }
-
-    if (!email || !email.includes('@')) {
-      return { success: false, error: 'Invalid or missing email address' }
-    }
-
-    console.log('📧 Sending email to:', email)
-
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://kostsaya.vercel.app'
-    
-    const response = await fetch(`${baseUrl}/api/send-email`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: email,
-        type: type,
-        data: paymentData
-      })
-    })
-
-    const result = await response.json()
-    
-    if (response.ok && result.success) {
-      return { success: true, emailId: result.emailId, email: email }
-    } else {
-      return { success: false, error: result.error || 'Failed to send email' }
-    }
-    
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-}
-
-// ✅ Get tenant email from database (if exists)
-async function getTenantEmail(payment) {
-  try {
-    // If payment has tenant_id, get email from tenants table
-    if (payment.tenant_id) {
-      const { data: tenant, error } = await supabase
-        .from('tenants')
-        .select('email')
-        .eq('id', payment.tenant_id)
-        .single()
-      
-      if (!error && tenant?.email) {
-        return tenant.email
-      }
-    }
-    
-    // Fallback: try to find tenant by phone number
-    if (payment.phone) {
-      const { data: tenantByPhone, error } = await supabase
-        .from('tenants')
-        .select('email')
-        .eq('phone', payment.phone)
-        .single()
-      
-      if (!error && tenantByPhone?.email) {
-        return tenantByPhone.email
-      }
-    }
-    
-    return null
-  } catch (error) {
-    console.log('⚠️ Error getting tenant email:', error.message)
-    return null
-  }
-}
+// pages/api/debug-notifications.js - Test direct notification integration
+import { Resend } from 'resend'
+import Twilio from 'twilio'
 
 export default async function handler(req, res) {
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end()
+  console.log('🧪 Debug Notifications API called')
+  
+  const startTime = Date.now()
+  
+  // Configuration check
+  const config = {
+    resend: {
+      configured: !!process.env.RESEND_API_KEY,
+      from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+      fromName: process.env.EMAIL_FROM_NAME || 'Kost Pak Trisno'
+    },
+    twilio: {
+      configured: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_WHATSAPP_FROM),
+      accountSid: process.env.TWILIO_ACCOUNT_SID ? `${process.env.TWILIO_ACCOUNT_SID.substring(0, 8)}...` : 'Not set',
+      whatsappFrom: process.env.TWILIO_WHATSAPP_FROM || 'Not set'
+    },
+    environment: process.env.NODE_ENV || 'unknown'
   }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({error: 'Method not allowed'})
-  }
-
-  console.log('🚀 Verify Payment API called')
-  const { id, action, admin_notes } = req.body
-
-  // Validation
-  if (!id || !action || !['success', 'rejected'].includes(action)) {
-    return res.status(400).json({
-      error: 'Invalid parameters',
-      required: { id: 'payment UUID', action: 'success|rejected' }
+  
+  console.log('📋 Configuration:', config)
+  
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      message: 'Direct Notifications Test API',
+      configuration: config,
+      usage: {
+        get: 'Check configuration',
+        post: 'Test direct notifications (no fetch loops)',
+        body: {
+          phone: '+6281460326800',
+          email: 'test@example.com',
+          action: 'success|rejected',
+          tenant_name: 'Test User'
+        }
+      }
     })
   }
-
-  // Check environment
-  if (!supabaseUrl || !serviceKey) {
-    return res.status(500).json({ error: 'Server configuration error' })
+  
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
   }
 
   try {
-    console.log('🔍 Fetching payment:', id)
-    
-    // Get payment data
-    const { data: payment, error: fetchError } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const {
+      phone = '+6281460326800', // Default test number
+      email = 'test@example.com',
+      action = 'success',
+      tenant_name = 'Test User Debugging'
+    } = req.body
 
-    if (fetchError || !payment) {
-      return res.status(404).json({ error: 'Payment not found' })
+    console.log('🧪 Testing direct integration with:', { phone, email, action, tenant_name })
+
+    const results = {
+      whatsapp: { attempted: false, success: false, error: null },
+      email: { attempted: false, success: false, error: null }
     }
 
-    console.log('✅ Payment found:', {
-      id: payment.id,
-      tenant_name: payment.tenant_name,
-      phone: payment.phone
-    })
-
-    // Update payment status
-    const newStatus = action === 'success' ? 'success' : 'rejected'
-    
-    console.log('🔄 Updating payment status to:', newStatus)
-
-    const { error: updateError } = await supabase
-      .from('payments')
-      .update({
-        status: newStatus,
-        updated_at: new Date().toISOString(),
-        admin_notes: admin_notes || null
-      })
-      .eq('id', id)
-
-    if (updateError) {
-      return res.status(500).json({ error: 'Database update failed' })
-    }
-
-    console.log('✅ Payment status updated successfully')
-
-    // ✅ Prepare notification data
-    const notificationData = {
-      tenant_name: payment.tenant_name,
-      month: payment.month,
-      room_number: payment.room_number,
-      phone: payment.phone,
-      receipt_url: payment.receipt_url,
-      admin_notes: admin_notes
-    }
-
-    // ✅ Get tenant email
-    const tenantEmail = await getTenantEmail(payment)
-    console.log('📧 Tenant email:', tenantEmail || 'Not found')
-
-    // ✅ Send notifications concurrently
-    const notifications = {
-      whatsapp: { success: false, error: 'Not attempted' },
-      email: { success: false, error: 'Not attempted' }
-    }
-
-    // Prepare WhatsApp message
-    let whatsappMessage = ''
-    if (payment.phone) {
-      whatsappMessage = action === 'success' 
-        ? `✅ *PEMBAYARAN DITERIMA*
-
-Halo ${payment.tenant_name}! 👋
-
-Pembayaran Anda telah *BERHASIL* diverifikasi:
-
-📋 *Detail:*
-• Nama: ${payment.tenant_name}
-• Bulan: ${payment.month}
-${payment.room_number ? `• Kamar: ${payment.room_number}` : ''}
-
-✅ Status: *LUNAS*
-
-${admin_notes ? `📝 *Catatan:* ${admin_notes}\n\n` : ''}Terima kasih atas pembayaran tepat waktu! 🙏
-
----
-*Kost Pak Trisno*
-📱 Admin: +6281234567890`
-        : `❌ *PEMBAYARAN DITOLAK*
-
-Halo ${payment.tenant_name},
-
-Maaf, pembayaran Anda *DITOLAK*:
-
-📋 *Detail:*
-• Nama: ${payment.tenant_name}
-• Bulan: ${payment.month}
-${payment.room_number ? `• Kamar: ${payment.room_number}` : ''}
-
-❌ Status: *DITOLAK*
-
-${admin_notes ? `📝 *Alasan:* ${admin_notes}\n\n` : ''}Silakan hubungi admin atau upload ulang bukti transfer yang jelas.
-
-📱 *Hubungi Admin:* +6281234567890
-
----
-*Kost Pak Trisno*`
-    }
-
-    // Send notifications in parallel
-    const notificationPromises = []
-
-    // WhatsApp notification
-    if (payment.phone) {
-      notificationPromises.push(
-        sendWhatsAppNotification(payment.phone, whatsappMessage)
-          .then(result => { notifications.whatsapp = result })
-          .catch(error => { notifications.whatsapp = { success: false, error: error.message } })
-      )
-    }
-
-    // Email notification
-    if (tenantEmail) {
-      const emailType = action === 'success' ? 'payment_accepted' : 'payment_rejected'
-      notificationPromises.push(
-        sendEmailNotification(tenantEmail, emailType, notificationData)
-          .then(result => { notifications.email = result })
-          .catch(error => { notifications.email = { success: false, error: error.message } })
-      )
-    }
-
-    // Wait for all notifications to complete
-    await Promise.allSettled(notificationPromises)
-
-    // ✅ Generate response message
-    const successCount = [notifications.whatsapp.success, notifications.email.success].filter(Boolean).length
-    const totalAttempted = notificationPromises.length
-
-    let responseMessage = `✅ Payment ${newStatus}ed successfully!`
-    
-    if (totalAttempted === 0) {
-      responseMessage += `\n\n⚠️ No contact information available for notifications.\nPlease inform tenant manually: ${payment.phone || 'Phone not provided'}`
-    } else if (successCount === totalAttempted) {
-      responseMessage += `\n\n🎉 All notifications sent successfully!`
-      if (notifications.whatsapp.success) responseMessage += `\n📱 WhatsApp: ${notifications.whatsapp.phone}`
-      if (notifications.email.success) responseMessage += `\n📧 Email: ${tenantEmail}`
-    } else if (successCount > 0) {
-      responseMessage += `\n\n⚠️ Partial notification success (${successCount}/${totalAttempted}):`
-      if (notifications.whatsapp.success) responseMessage += `\n✅ WhatsApp: Sent to ${notifications.whatsapp.phone}`
-      else if (payment.phone) responseMessage += `\n❌ WhatsApp: ${notifications.whatsapp.error}`
+    // ✅ Test Direct WhatsApp (No fetch)
+    if (config.twilio.configured) {
+      results.whatsapp.attempted = true
       
-      if (notifications.email.success) responseMessage += `\n✅ Email: Sent to ${tenantEmail}`
-      else if (tenantEmail) responseMessage += `\n❌ Email: ${notifications.email.error}`
+      try {
+        console.log('📱 Testing direct Twilio client...')
+        
+        const twilioClient = Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+        
+        const message = `🧪 *TEST NOTIFICATION - DIRECT*
+
+Halo ${tenant_name}!
+
+Status: ${action === 'success' ? '✅ BERHASIL' : '❌ DITOLAK'}
+
+⏰ Time: ${new Date().toLocaleString('id-ID')}
+🔧 Method: Direct Twilio Client (No Fetch)
+
+---
+Kost Pak Trisno - Debug Mode`
+
+        const result = await twilioClient.messages.create({
+          from: `whatsapp:${process.env.TWILIO_WHATSAPP_FROM}`,
+          to: `whatsapp:${phone}`,
+          body: message
+        })
+
+        results.whatsapp.success = true
+        results.whatsapp.sid = result.sid
+        results.whatsapp.status = result.status
+        
+        console.log('✅ WhatsApp sent successfully:', result.sid)
+        
+      } catch (error) {
+        results.whatsapp.error = error.message
+        console.error('❌ WhatsApp error:', error)
+      }
     } else {
-      responseMessage += `\n\n❌ All notifications failed. Please inform tenant manually:`
-      responseMessage += `\n📱 Phone: ${payment.phone || 'Not provided'}`
-      if (tenantEmail) responseMessage += `\n📧 Email: ${tenantEmail}`
-      responseMessage += `\n\n💡 Check service configurations (RESEND_API_KEY, TWILIO_* variables)`
+      results.whatsapp.error = 'Twilio not configured'
     }
 
-    // Final response
-    const response = {
-      success: true,
-      payment: {
-        id: payment.id,
-        tenant_name: payment.tenant_name,
-        phone: payment.phone,
-        room_number: payment.room_number,
-        month: payment.month,
-        status: newStatus,
-        admin_notes: admin_notes
-      },
-      notifications: {
-        attempted: totalAttempted,
-        successful: successCount,
-        whatsapp: notifications.whatsapp,
-        email: notifications.email,
-        tenant_email: tenantEmail
-      },
-      message: responseMessage,
+    // ✅ Test Direct Email (No fetch)
+    if (config.resend.configured) {
+      results.email.attempted = true
+      
+      try {
+        console.log('📧 Testing direct Resend client...')
+        
+        const resendClient = new Resend(process.env.RESEND_API_KEY)
+        
+        const emailContent = {
+          subject: `🧪 Test ${action === 'success' ? 'Success' : 'Rejection'} - Direct Integration`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <h2 style="color: ${action === 'success' ? '#16a34a' : '#dc2626'};">
+                🧪 Test Notification - Direct Integration
+              </h2>
+              
+              <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3>📋 Test Data:</h3>
+                <ul>
+                  <li><strong>Tenant:</strong> ${tenant_name}</li>
+                  <li><strong>Action:</strong> ${action}</li>
+                  <li><strong>Method:</strong> Direct Resend Client (No Fetch)</li>
+                  <li><strong>Time:</strong> ${new Date().toLocaleString('id-ID')}</li>
+                  <li><strong>Email:</strong> ${email}</li>
+                </ul>
+              </div>
+              
+              <div style="background: ${action === 'success' ? '#f0fdf4' : '#fef2f2'}; padding: 15px; border-radius: 6px;">
+                <p><strong>Status:</strong> ${action === 'success' ? '✅ SUCCESS TEST' : '❌ REJECTION TEST'}</p>
+                <p><strong>Configuration:</strong> Working correctly ✅</p>
+              </div>
+              
+              <hr style="margin: 30px 0;">
+              <div style="text-align: center; color: #666; font-size: 14px;">
+                <strong>Kost Pak Trisno - Debug Mode</strong><br>
+                📧 Direct Resend Integration Test
+              </div>
+            </div>
+          `,
+          text: `
+🧪 TEST NOTIFICATION - DIRECT INTEGRATION
+
+Tenant: ${tenant_name}
+Action: ${action}
+Method: Direct Resend Client (No Fetch)
+Time: ${new Date().toLocaleString('id-ID')}
+
+Status: ${action === 'success' ? '✅ SUCCESS TEST' : '❌ REJECTION TEST'}
+Configuration: Working correctly ✅
+
+---
+Kost Pak Trisno - Debug Mode
+          `
+        }
+
+        const result = await resendClient.emails.send({
+          from: `${config.resend.fromName} <${config.resend.from}>`,
+          to: [email],
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text
+        })
+
+        results.email.success = true
+        results.email.emailId = result.data?.id
+        
+        console.log('✅ Email sent successfully:', result.data?.id)
+        
+      } catch (error) {
+        results.email.error = error.message
+        console.error('❌ Email error:', error)
+      }
+    } else {
+      results.email.error = 'Resend not configured'
+    }
+
+    // Calculate execution time
+    const executionTime = Date.now() - startTime
+    
+    // Generate summary
+    const successCount = [results.whatsapp.success, results.email.success].filter(Boolean).length
+    const attemptedCount = [results.whatsapp.attempted, results.email.attempted].filter(Boolean).length
+    
+    const summary = {
+      success: successCount > 0,
+      attempted: attemptedCount,
+      successful: successCount,
+      executionTime: `${executionTime}ms`,
       timestamp: new Date().toISOString()
     }
+    
+    console.log(`🎯 Test completed: ${successCount}/${attemptedCount} successful in ${executionTime}ms`)
 
-    console.log('🎉 API Success with notifications:', {
-      whatsapp: notifications.whatsapp.success,
-      email: notifications.email.success,
-      total: `${successCount}/${totalAttempted}`
+    return res.status(200).json({
+      message: 'Direct notification test completed',
+      configuration: config,
+      testData: {
+        phone,
+        email,
+        action,
+        tenant_name
+      },
+      results,
+      summary,
+      recommendations: {
+        whatsapp: results.whatsapp.success ? '✅ Working correctly' : results.whatsapp.error || 'Not configured',
+        email: results.email.success ? '✅ Working correctly' : results.email.error || 'Not configured',
+        overall: successCount === attemptedCount ? '🎉 All services working' : 
+                successCount > 0 ? '⚠️ Partial success - check failed services' : 
+                '❌ All services failed - check configuration'
+      }
     })
-
-    return res.status(200).json(response)
 
   } catch (error) {
-    console.error('💥 Unexpected error:', error)
+    const executionTime = Date.now() - startTime
+    console.error('💥 Debug test error:', error)
+    
     return res.status(500).json({
-      error: 'Internal server error',
-      message: error.message,
-      timestamp: new Date().toISOString()
+      error: error.message,
+      configuration: config,
+      executionTime: `${executionTime}ms`,
+      timestamp: new Date().toISOString(),
+      stack: process.env.NODE_ENV === 'development' ? error.stack : 'Hidden in production'
     })
   }
 }
