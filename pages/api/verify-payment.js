@@ -95,7 +95,7 @@ Pembayaran kost untuk bulan *${month}* *DITOLAK*. 😔
 ${room_number ? `🏠 Kamar: *${room_number}*` : ''}
 
 Silakan upload ulang bukti yang lebih jelas di:
-${process.env.NEXT_PUBLIC_APP_URL || 'https://kostpaktrisno.vercel.app'}/payment
+${process.env.NEXT_PUBLIC_APP_URL || 'https://kostsaya.vercel.app/'}/payment
 
 _— Kost Pak Trisno —_`
   }
