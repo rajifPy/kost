@@ -4,6 +4,13 @@ const accountSid = process.env.TWILIO_ACCOUNT_SID
 const authToken = process.env.TWILIO_AUTH_TOKEN
 const whatsappFrom = process.env.TWILIO_WHATSAPP_FROM
 
+const msg = await client.messages.create({
+  from: process.env.TWILIO_WHATSAPP_FROM,
+  to: `whatsapp:${phone}`,
+  body: 'Pembayaran diterima...',
+  statusCallback: `${process.env.BASE_URL}/api/whatsapp-status`
+});
+
 // ✅ Validasi konfigurasi
 if (!accountSid || !authToken || !whatsappFrom) {
   console.error('❌ Twilio not configured. Check environment variables.')
