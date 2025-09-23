@@ -1,12 +1,71 @@
-// pages/api/verify-payment.js - Quick fix untuk disable WhatsApp sementara
+// pages/api/verify-payment.js - FIXED VERSION
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const supabase = createClient(supabaseUrl, serviceKey)
 
-export default async function handler(req, res){
-  // Add CORS headers
+// ✅ WhatsApp Configuration
+const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID
+const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN
+const twilioWhatsAppFrom = process.env.TWILIO_WHATSAPP_FROM
+
+// Format phone number untuk Indonesia
+function formatPhoneNumber(phone) {
+  if (!phone) return null
+  let cleaned = phone.replace(/[\s\-\.]/g, '')
+  
+  if (cleaned.startsWith('08')) {
+    return '+62' + cleaned.substring(1) // 08123 -> +62123
+  } else if (cleaned.startsWith('62')) {
+    return '+' + cleaned // 62123 -> +62123
+  } else if (cleaned.startsWith('+62')) {
+    return cleaned // +62123 -> +62123
+  }
+  return '+62' + cleaned // fallback
+}
+
+// ✅ Send WhatsApp Function
+async function sendWhatsAppNotification(phone, message) {
+  try {
+    // Check configuration
+    if (!twilioAccountSid || !twilioAuthToken || !twilioWhatsAppFrom) {
+      return {
+        success: false,
+        error: 'Twilio configuration incomplete'
+      }
+    }
+
+    const formattedPhone = formatPhoneNumber(phone)
+    if (!formattedPhone) {
+      return { success: false, error: 'Invalid phone format' }
+    }
+
+    // Call WhatsApp API
+    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://kostsaya.vercel.app'}/api/send-whatsapp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: formattedPhone,
+        message: message
+      })
+    })
+
+    const result = await response.json()
+    
+    if (response.ok && result.success) {
+      return { success: true, sid: result.sid, phone: formattedPhone }
+    } else {
+      return { success: false, error: result.error || 'Failed to send' }
+    }
+    
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+}
+
+export default async function handler(req, res) {
+  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
@@ -16,109 +75,94 @@ export default async function handler(req, res){
   }
 
   if (req.method !== 'POST') {
-    console.log('❌ Wrong method:', req.method)
     return res.status(405).json({error: 'Method not allowed'})
   }
 
   console.log('🚀 Verify Payment API called')
-  console.log('📋 Request body:', JSON.stringify(req.body, null, 2))
-
   const { id, action } = req.body
 
-  // Validate input
-  if (!id || !action) {
-    console.log('❌ Missing parameters:', { id, action })
+  // Validation
+  if (!id || !action || !['success', 'rejected'].includes(action)) {
     return res.status(400).json({
-      error: 'Missing required parameters',
-      required: { id: 'payment UUID', action: 'success|rejected' },
-      received: { id, action }
-    })
-  }
-
-  if (!['success', 'rejected'].includes(action)) {
-    console.log('❌ Invalid action:', action)
-    return res.status(400).json({
-      error: 'Invalid action',
-      validActions: ['success', 'rejected'],
-      received: action
-    })
-  }
-
-  // Check environment
-  if (!supabaseUrl || !serviceKey) {
-    console.error('❌ Missing Supabase configuration')
-    return res.status(500).json({
-      error: 'Server configuration error',
-      details: 'Supabase not configured'
+      error: 'Invalid parameters',
+      required: { id: 'payment UUID', action: 'success|rejected' }
     })
   }
 
   try {
-    console.log('🔍 Fetching payment:', id)
-    
-    // Get payment - SIMPLIFIED: tanpa complex join
+    // ✅ Get payment data
     const { data: payment, error: fetchError } = await supabase
       .from('payments')
       .select('*')
       .eq('id', id)
       .single()
 
-    if (fetchError) {
-      console.error('❌ Database fetch error:', fetchError)
-      return res.status(500).json({
-        error: 'Database fetch failed',
-        details: fetchError.message,
-        hint: fetchError.hint
-      })
+    if (fetchError || !payment) {
+      return res.status(404).json({ error: 'Payment not found' })
     }
 
-    if (!payment) {
-      console.error('❌ Payment not found:', id)
-      return res.status(404).json({
-        error: 'Payment not found',
-        paymentId: id
-      })
-    }
-
-    console.log('✅ Payment found:', {
-      id: payment.id,
-      tenant_name: payment.tenant_name,
-      phone: payment.phone
-    })
-
-    // Update payment status
+    // ✅ Update payment status
     const newStatus = action === 'success' ? 'success' : 'rejected'
     
-    console.log('🔄 Updating payment status to:', newStatus)
-
-    const { data: updateData, error: updateError } = await supabase
+    const { error: updateError } = await supabase
       .from('payments')
       .update({
         status: newStatus,
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
-      .select()
 
     if (updateError) {
-      console.error('❌ Database update error:', updateError)
-      return res.status(500).json({
-        error: 'Database update failed',
-        details: updateError.message,
-        hint: updateError.hint
-      })
+      return res.status(500).json({ error: 'Database update failed' })
     }
 
-    console.log('✅ Payment status updated successfully')
+    // ✅ Send WhatsApp notification
+    let whatsappResult = { success: false, error: 'Phone number missing' }
+    
+    if (payment.phone) {
+      const message = action === 'success' 
+        ? `✅ *PEMBAYARAN DITERIMA*
 
-    // DISABLE WhatsApp notification sementara
-    const whatsappResult = { 
-      success: false, 
-      error: 'WhatsApp notification disabled (service not configured)' 
+Halo ${payment.tenant_name}! 👋
+
+Pembayaran Anda telah *BERHASIL* diverifikasi:
+
+📋 *Detail:*
+- Nama: ${payment.tenant_name}
+- Bulan: ${payment.month}
+${payment.room_number ? `• Kamar: ${payment.room_number}` : ''}
+
+✅ Status: *LUNAS*
+
+Terima kasih atas pembayaran tepat waktu! 🙏
+
+---
+*Kost Pak Trisno*
+📱 Admin: +6281234567890`
+        : `❌ *PEMBAYARAN DITOLAK*
+
+Halo ${payment.tenant_name},
+
+Maaf, pembayaran Anda *DITOLAK*:
+
+📋 *Detail:*
+- Nama: ${payment.tenant_name}
+- Bulan: ${payment.month}
+
+❌ Status: *DITOLAK*
+
+Silakan hubungi admin untuk klarifikasi atau kirim ulang bukti transfer yang jelas.
+
+📱 *Hubungi Admin:* +6281234567890
+
+---
+*Kost Pak Trisno*`
+
+      whatsappResult = await sendWhatsAppNotification(payment.phone, message)
     }
 
-    // Final response
-    const response = {
+    // ✅ Final response
+    return res.status(200).json({
       success: true,
       payment: {
         id: payment.id,
@@ -129,20 +173,17 @@ export default async function handler(req, res){
         status: newStatus
       },
       whatsapp_notification: whatsappResult,
-      message: `Payment ${newStatus}ed successfully! ✅ (WhatsApp notification disabled)`,
+      message: whatsappResult.success 
+        ? `Payment ${newStatus}ed successfully! WhatsApp sent to ${payment.phone}` 
+        : `Payment ${newStatus}ed successfully! WhatsApp failed: ${whatsappResult.error}`,
       timestamp: new Date().toISOString()
-    }
-
-    console.log('🎉 API Success:', response)
-    return res.status(200).json(response)
+    })
 
   } catch (error) {
-    console.error('💥 Unexpected error:', error)
+    console.error('💥 Verify payment error:', error)
     return res.status(500).json({
       error: 'Internal server error',
-      message: error.message,
-      name: error.name,
-      timestamp: new Date().toISOString()
+      message: error.message
     })
   }
 }
