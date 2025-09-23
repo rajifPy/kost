@@ -1,6 +1,8 @@
-// pages/admin/dashboard.js - MEGA SIMPLIFIED untuk debug
+// pages/admin/dashboard.js - FINAL VERSION yang pasti work
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
+import RoomList from '../../components/RoomList'
+import TenantManagement from '../../components/TenantManagement'
 import { useRouter } from 'next/router'
 
 export default function AdminDashboard() {
@@ -8,113 +10,149 @@ export default function AdminDashboard() {
   const [rooms, setRooms] = useState([])
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('overview')
   const [error, setError] = useState(null)
-  const [debugInfo, setDebugInfo] = useState([])
+  const [authLoading, setAuthLoading] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
     setMounted(true)
-    checkAuth()
   }, [])
 
-  function addDebugInfo(message) {
-    setDebugInfo(prev => [...prev, `${new Date().toISOString()}: ${message}`])
-    console.log(message)
-  }
+  useEffect(() => {
+    if (mounted) {
+      checkAuth()
+    }
+  }, [mounted])
 
   async function checkAuth() {
-    addDebugInfo('🔍 Starting auth check...')
+    console.log('🔍 Starting auth check...')
+    setAuthLoading(true)
     
     try {
       const { data, error } = await supabase.auth.getUser()
       const user = data?.user
       
       if (error || !user) {
-        addDebugInfo('❌ No auth user, redirecting...')
+        console.log('❌ No auth user, redirecting...')
         router.push('/admin/login')
         return
       }
       
-      addDebugInfo(`✅ Auth OK: ${user.email}`)
-      await fetchData()
+      console.log('✅ Auth OK:', user.email)
+      
+      // Small delay to ensure state updates
+      setTimeout(() => {
+        setAuthLoading(false)
+        fetchData()
+      }, 100)
+      
     } catch (e) {
-      addDebugInfo(`💥 Auth error: ${e.message}`)
+      console.error('💥 Auth error:', e)
+      setAuthLoading(false)
       router.push('/admin/login')
     }
   }
 
   async function fetchData() {
-    addDebugInfo('🔄 Starting fetchData...')
+    console.log('🔄 Starting fetchData...')
     setLoading(true)
     setError(null)
     
     try {
-      // Test 1: Check Supabase client
-      addDebugInfo('📡 Testing Supabase connection...')
-      if (!supabase) {
-        throw new Error('Supabase client is null')
-      }
-      
-      // Test 2: Simple query first - just count
-      addDebugInfo('🔢 Testing simple count query...')
-      const { count: roomCount, error: countError } = await supabase
+      // Fetch rooms with error handling
+      console.log('🏠 Fetching rooms...')
+      const roomsPromise = supabase
         .from('rooms')
-        .select('*', { count: 'exact', head: true })
-      
-      if (countError) {
-        addDebugInfo(`❌ Count query failed: ${countError.message}`)
-        throw countError
-      }
-      
-      addDebugInfo(`✅ Found ${roomCount} rooms in database`)
+        .select('*')
+        .order('created_at', { ascending: false })
 
-      // Test 3: Fetch rooms data
-      addDebugInfo('🏠 Fetching rooms data...')
-      const { data: roomsData, error: roomsError } = await supabase
-        .from('rooms')
-        .select('id, number, title, price, is_available, created_at')
-        .limit(10)
-      
-      if (roomsError) {
-        addDebugInfo(`❌ Rooms fetch failed: ${roomsError.message}`)
-        throw roomsError
-      }
-      
-      addDebugInfo(`✅ Rooms data fetched: ${roomsData?.length || 0} items`)
-      setRooms(roomsData || [])
-
-      // Test 4: Fetch payments data  
-      addDebugInfo('💳 Fetching payments data...')
-      const { data: paymentsData, error: paymentsError } = await supabase
+      // Fetch payments with error handling  
+      console.log('💳 Fetching payments...')
+      const paymentsPromise = supabase
         .from('payments')
-        .select('id, tenant_name, phone, month, status, created_at')
-        .limit(10)
-      
-      if (paymentsError) {
-        addDebugInfo(`❌ Payments fetch failed: ${paymentsError.message}`)
-        // Don't throw error for payments - continue with rooms only
-        setPayments([])
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      // Execute both queries in parallel
+      const [roomsResult, paymentsResult] = await Promise.allSettled([
+        roomsPromise,
+        paymentsPromise
+      ])
+
+      // Handle rooms result
+      if (roomsResult.status === 'fulfilled' && !roomsResult.value.error) {
+        setRooms(roomsResult.value.data || [])
+        console.log('✅ Rooms loaded:', roomsResult.value.data?.length || 0)
       } else {
-        addDebugInfo(`✅ Payments data fetched: ${paymentsData?.length || 0} items`)
-        setPayments(paymentsData || [])
+        console.error('❌ Rooms failed:', roomsResult.reason || roomsResult.value?.error)
+        setRooms([])
       }
 
-      addDebugInfo('🎉 Data fetch completed successfully!')
+      // Handle payments result
+      if (paymentsResult.status === 'fulfilled' && !paymentsResult.value.error) {
+        setPayments(paymentsResult.value.data || [])
+        console.log('✅ Payments loaded:', paymentsResult.value.data?.length || 0)
+      } else {
+        console.error('❌ Payments failed:', paymentsResult.reason || paymentsResult.value?.error)
+        setPayments([])
+      }
+
+      console.log('🎉 Data fetch completed!')
       
     } catch (error) {
-      addDebugInfo(`💥 Critical error: ${error.message}`)
+      console.error('💥 Fetch error:', error)
       setError(error.message)
-      
-      // Set empty data to prevent crashes
       setRooms([])
       setPayments([])
-    } finally {
-      addDebugInfo('✅ Setting loading to false')
+    }
+
+    // Always set loading to false with delay to ensure rendering
+    setTimeout(() => {
       setLoading(false)
+      console.log('✅ Loading cleared')
+    }, 300)
+  }
+
+  async function verifyPayment(payment, action) {
+    const paymentName = payment.tenant_name || 'Unknown'
+    
+    if (!confirm(`${action === 'success' ? 'Accept' : 'Reject'} payment from ${paymentName}?`)) {
+      return
+    }
+
+    try {
+      const res = await fetch('/api/verify-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: payment.id, action })
+      })
+      
+      const data = await res.json()
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to verify payment')
+      }
+      
+      // Show better success message
+      const message = data.whatsapp_notification?.success 
+        ? `✅ Payment ${action}ed successfully!\n📱 WhatsApp sent to ${data.payment.phone}` 
+        : `✅ Payment ${action}ed successfully!\n\n⚠️ WhatsApp notification disabled (service not configured)\nPlease inform tenant manually: ${data.payment.phone}`
+      
+      alert(message)
+      
+      // Refresh data
+      fetchData()
+      
+    } catch (error) {
+      console.error('❌ Verify payment error:', error)
+      alert(`Error: ${error.message}`)
     }
   }
 
   async function handleLogout() {
+    if (!confirm('Are you sure you want to logout?')) return
+    
     try {
       const { error } = await supabase.auth.signOut()
       if (error) throw error
@@ -124,68 +162,40 @@ export default function AdminDashboard() {
     }
   }
 
+  // Render guards
   if (!mounted) {
-    return <div>Initializing...</div>
+    return <div className="min-h-screen flex items-center justify-center">
+      <div>Initializing...</div>
+    </div>
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Checking authentication...</p>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="max-w-2xl w-full">
-          <div className="text-center mb-6">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading admin dashboard...</p>
-            <p className="text-xs text-gray-400 mt-2">Debugging in progress...</p>
-          </div>
-          
-          {/* Debug Information */}
-          <div className="bg-gray-900 text-green-400 p-4 rounded-lg text-xs max-h-64 overflow-y-auto">
-            <div className="font-bold mb-2">🔍 Debug Log:</div>
-            {debugInfo.map((info, index) => (
-              <div key={index} className="mb-1">{info}</div>
-            ))}
-            {debugInfo.length === 0 && <div>Waiting for debug info...</div>}
-          </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading dashboard data...</p>
+          <p className="text-xs text-gray-400 mt-2">
+            {rooms.length > 0 ? `Loaded ${rooms.length} rooms` : 'Loading rooms...'}
+            {payments.length > 0 ? `, ${payments.length} payments` : ', loading payments...'}
+          </p>
         </div>
       </div>
     )
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="max-w-md w-full text-center">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-            <div className="text-6xl mb-4">💥</div>
-            <h2 className="text-xl font-semibold text-red-600 mb-2">Database Error</h2>
-            <p className="text-red-800 mb-4">{error}</p>
-            <button 
-              onClick={fetchData}
-              className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 mr-2"
-            >
-              Retry
-            </button>
-            <button 
-              onClick={handleLogout}
-              className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
-            >
-              Logout
-            </button>
-          </div>
-          
-          {/* Debug Information */}
-          <div className="mt-4 bg-gray-900 text-green-400 p-4 rounded-lg text-xs max-h-48 overflow-y-auto text-left">
-            <div className="font-bold mb-2">🔍 Debug Log:</div>
-            {debugInfo.map((info, index) => (
-              <div key={index} className="mb-1">{info}</div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // SUCCESS! Show dashboard
+  // Calculate stats
   const availableRooms = rooms.filter(r => r.is_available).length
   const occupiedRooms = rooms.length - availableRooms
   const pendingPayments = payments.filter(p => p.status === 'pending').length
@@ -193,7 +203,12 @@ export default function AdminDashboard() {
   return (
     <div className="max-w-7xl mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-primary-700">Admin Dashboard</h1>
+        <h1 className="text-2xl font-bold text-primary-700">
+          Admin Dashboard
+          <span className="text-sm font-normal text-gray-500 ml-2">
+            ({rooms.length} rooms, {payments.length} payments)
+          </span>
+        </h1>
         <button 
           onClick={handleLogout}
           className="px-4 py-2 border rounded-lg hover:bg-gray-50 transition-colors"
@@ -202,16 +217,23 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Success Message */}
-      <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
-        <div className="flex items-start gap-2">
-          <span className="text-green-500">✅</span>
-          <div>
-            <div className="font-medium">Dashboard Loaded Successfully!</div>
-            <div className="text-sm">All systems operational</div>
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
+          <div className="flex items-start gap-2">
+            <span className="text-red-500">❌</span>
+            <div>
+              <div className="font-medium">Error:</div>
+              <div className="text-sm">{error}</div>
+              <button 
+                onClick={fetchData}
+                className="mt-2 text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+              >
+                Retry
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -221,76 +243,178 @@ export default function AdminDashboard() {
         </div>
         <div className="card bg-green-50">
           <div className="text-2xl font-bold text-green-600">{availableRooms}</div>
-          <div className="text-sm text-green-800">Available Rooms</div>
+          <div className="text-sm text-green-800">Available</div>
         </div>
         <div className="card bg-red-50">
           <div className="text-2xl font-bold text-red-600">{occupiedRooms}</div>
-          <div className="text-sm text-red-800">Occupied Rooms</div>
+          <div className="text-sm text-red-800">Occupied</div>
         </div>
         <div className="card bg-yellow-50">
           <div className="text-2xl font-bold text-yellow-600">{pendingPayments}</div>
-          <div className="text-sm text-yellow-800">Pending Payments</div>
+          <div className="text-sm text-yellow-800">Pending</div>
         </div>
       </div>
 
-      {/* Data Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card">
-          <h3 className="font-semibold mb-4">Rooms ({rooms.length})</h3>
-          <div className="space-y-2">
-            {rooms.slice(0, 5).map(room => (
-              <div key={room.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                <div>
-                  <div className="font-medium">{room.title || `Room ${room.number}`}</div>
-                  <div className="text-sm text-gray-600">Rp {room.price?.toLocaleString('id-ID') || '0'}</div>
+      {/* Tabs */}
+      <div className="flex border-b mb-6 overflow-x-auto">
+        {['overview', 'rooms', 'tenants', 'payments'].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 border-b-2 whitespace-nowrap capitalize ${
+              activeTab === tab 
+                ? 'border-primary-500 text-primary-600' 
+                : 'border-transparent hover:text-primary-600'
+            }`}
+          >
+            {tab}
+            {tab === 'rooms' && ` (${rooms.length})`}
+            {tab === 'payments' && ` (${payments.length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'overview' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Recent Rooms */}
+          <div className="card">
+            <h3 className="font-semibold mb-4">Recent Rooms</h3>
+            <div className="space-y-2">
+              {rooms.slice(0, 5).map(room => (
+                <div key={room.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                  <div>
+                    <div className="font-medium">{room.title || `Room ${room.number}`}</div>
+                    <div className="text-sm text-gray-600">Rp {room.price?.toLocaleString('id-ID') || '0'}</div>
+                  </div>
+                  <span className={room.is_available ? 'pill-available' : 'pill-full'}>
+                    {room.is_available ? 'Available' : 'Occupied'}
+                  </span>
                 </div>
-                <span className={room.is_available ? 'pill-available' : 'pill-full'}>
-                  {room.is_available ? 'Available' : 'Occupied'}
-                </span>
-              </div>
-            ))}
-            {rooms.length === 0 && (
-              <div className="text-center text-gray-500 py-4">No rooms found</div>
-            )}
+              ))}
+              {rooms.length === 0 && (
+                <div className="text-center text-gray-500 py-4">No rooms found</div>
+              )}
+            </div>
+          </div>
+
+          {/* Recent Payments */}
+          <div className="card">
+            <h3 className="font-semibold mb-4">Recent Payments</h3>
+            <div className="space-y-2">
+              {payments.slice(0, 5).map(payment => (
+                <div key={payment.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                  <div>
+                    <div className="font-medium">{payment.tenant_name}</div>
+                    <div className="text-sm text-gray-600">{payment.month}</div>
+                  </div>
+                  <span className={`text-xs px-2 py-1 rounded ${
+                    payment.status === 'success' ? 'bg-green-100 text-green-800' :
+                    payment.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                    'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {payment.status}
+                  </span>
+                </div>
+              ))}
+              {payments.length === 0 && (
+                <div className="text-center text-gray-500 py-4">No payments found</div>
+              )}
+            </div>
           </div>
         </div>
+      )}
 
-        <div className="card">
-          <h3 className="font-semibold mb-4">Payments ({payments.length})</h3>
-          <div className="space-y-2">
-            {payments.slice(0, 5).map(payment => (
-              <div key={payment.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                <div>
-                  <div className="font-medium">{payment.tenant_name}</div>
-                  <div className="text-sm text-gray-600">{payment.month}</div>
+      {activeTab === 'rooms' && (
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-semibold text-lg">Rooms Management</h3>
+            <button className="btn-primary">Add Room</button>
+          </div>
+          
+          {rooms.length > 0 ? (
+            <RoomList rooms={rooms} adminMode={true} />
+          ) : (
+            <div className="card text-center py-8">
+              <div className="text-gray-400 text-4xl mb-2">🏠</div>
+              <p className="text-gray-600">No rooms available yet.</p>
+              <button className="btn-primary mt-4">Add First Room</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'tenants' && (
+        <TenantManagement rooms={rooms} />
+      )}
+
+      {activeTab === 'payments' && (
+        <div>
+          <h3 className="font-semibold mb-4 text-lg">Payments Management</h3>
+          <div className="space-y-3">
+            {payments.map(payment => (
+              <div key={payment.id} className="card border-l-4 border-l-primary-500">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="font-semibold text-lg">{payment.tenant_name}</div>
+                    <div className="text-sm text-gray-600 space-y-1">
+                      <div>📱 {payment.phone}</div>
+                      <div>🗓️ {payment.month}</div>
+                      {payment.room_number && <div>🏠 Room: {payment.room_number}</div>}
+                      <div>📅 {new Date(payment.created_at).toLocaleDateString()}</div>
+                      {payment.message && <div>💬 {payment.message}</div>}
+                      {payment.receipt_url && (
+                        <div>
+                          <a 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            href={payment.receipt_url} 
+                            className="text-blue-600 underline hover:text-blue-800"
+                          >
+                            View Receipt →
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 ml-4">
+                    <span className={`text-xs px-2 py-1 rounded ${
+                      payment.status === 'success' ? 'bg-green-100 text-green-800' :
+                      payment.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                      'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {payment.status}
+                    </span>
+                    {payment.status === 'pending' && (
+                      <div className="flex flex-col gap-1">
+                        <button 
+                          onClick={() => verifyPayment(payment, 'success')} 
+                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                        >
+                          Accept
+                        </button>
+                        <button 
+                          onClick={() => verifyPayment(payment, 'rejected')} 
+                          className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded ${
-                  payment.status === 'success' ? 'bg-green-100 text-green-800' :
-                  payment.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                  'bg-yellow-100 text-yellow-800'
-                }`}>
-                  {payment.status}
-                </span>
               </div>
             ))}
+            
             {payments.length === 0 && (
-              <div className="text-center text-gray-500 py-4">No payments found</div>
+              <div className="card text-center py-8 text-gray-500">
+                <div className="text-4xl mb-2">💳</div>
+                <p>No payments submitted yet.</p>
+              </div>
             )}
           </div>
         </div>
-      </div>
-
-      {/* Debug Information - Collapsible */}
-      <details className="mt-6">
-        <summary className="cursor-pointer text-sm text-gray-600 hover:text-gray-800">
-          🔍 Show Debug Information ({debugInfo.length} logs)
-        </summary>
-        <div className="mt-2 bg-gray-900 text-green-400 p-4 rounded-lg text-xs max-h-48 overflow-y-auto">
-          {debugInfo.map((info, index) => (
-            <div key={index} className="mb-1">{info}</div>
-          ))}
-        </div>
-      </details>
+      )}
     </div>
   )
 }
