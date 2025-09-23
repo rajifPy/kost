@@ -47,7 +47,7 @@ Halo ${ProfileName || 'Customer'}! 👋
 • *LOKASI* - Alamat lengkap
 • *KONTAK* - Hubungi admin
 
-🌐 Website: ${process.env.NEXT_PUBLIC_APP_URL || 'https://kostpaktrisno.vercel.app'}
+🌐 Website: ${process.env.NEXT_PUBLIC_APP_URL || 'https://kostsaya.vercel.app/'}
 
 Ketik salah satu menu di atas untuk info lebih lanjut.`
     }
@@ -69,7 +69,7 @@ Ketik salah satu menu di atas untuk info lebih lanjut.`
 • Area jemuran
 • WiFi unlimited
 
-📱 *Cek ketersediaan:* ${process.env.NEXT_PUBLIC_APP_URL || 'https://kostpaktrisno.vercel.app'}`
+📱 *Cek ketersediaan:* ${process.env.NEXT_PUBLIC_APP_URL || 'https://kostsaya.vercel.app/'}`
     }
     else if (messageBody.includes('bayar')) {
       reply = `💳 *Cara Pembayaran*
@@ -119,7 +119,7 @@ https://maps.app.goo.gl/xyz (sesuaikan dengan maps real)
 Senin - Minggu: 08:00 - 21:00
 
 🌐 *Website:*
-${process.env.NEXT_PUBLIC_APP_URL || 'https://kostpaktrisno.vercel.app'}
+${process.env.NEXT_PUBLIC_APP_URL || 'https://kostsaya.vercel.app/'}
 
 *Untuk emergency di luar jam kerja, tetap bisa WhatsApp*`
     }
