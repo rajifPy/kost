@@ -1,48 +1,53 @@
-// pages/api/verify-payment.js - FIXED VERSION
+// pages/api/verify-payment.js - UPDATED VERSION with Email + WhatsApp
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const supabase = createClient(supabaseUrl, serviceKey)
 
-// ✅ WhatsApp Configuration
-const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID
-const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN
-const twilioWhatsAppFrom = process.env.TWILIO_WHATSAPP_FROM
+// ✅ Check configurations
+function isWhatsAppConfigured() {
+  return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_WHATSAPP_FROM)
+}
 
-// Format phone number untuk Indonesia
+function isEmailConfigured() {
+  return !!process.env.RESEND_API_KEY
+}
+
+// ✅ Format Indonesian phone numbers
 function formatPhoneNumber(phone) {
   if (!phone) return null
   let cleaned = phone.replace(/[\s\-\.]/g, '')
   
   if (cleaned.startsWith('08')) {
-    return '+62' + cleaned.substring(1) // 08123 -> +62123
+    return '+62' + cleaned.substring(1) 
   } else if (cleaned.startsWith('62')) {
-    return '+' + cleaned // 62123 -> +62123
+    return '+' + cleaned  
   } else if (cleaned.startsWith('+62')) {
-    return cleaned // +62123 -> +62123
+    return cleaned 
+  } else if (!cleaned.startsWith('+')) {
+    return '+62' + cleaned 
   }
-  return '+62' + cleaned // fallback
+  return cleaned
 }
 
-// ✅ Send WhatsApp Function
+// ✅ Send WhatsApp notification
 async function sendWhatsAppNotification(phone, message) {
   try {
-    // Check configuration
-    if (!twilioAccountSid || !twilioAuthToken || !twilioWhatsAppFrom) {
-      return {
-        success: false,
-        error: 'Twilio configuration incomplete'
-      }
+    if (!isWhatsAppConfigured()) {
+      return { success: false, error: 'WhatsApp service not configured' }
     }
 
     const formattedPhone = formatPhoneNumber(phone)
     if (!formattedPhone) {
-      return { success: false, error: 'Invalid phone format' }
+      return { success: false, error: 'Invalid phone number format' }
     }
 
-    // Call WhatsApp API
-    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://kostsaya.vercel.app'}/api/send-whatsapp`, {
+    console.log('📱 Sending WhatsApp to:', formattedPhone)
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://kostsaya.vercel.app'
+    
+    const response = await fetch(`${baseUrl}/api/send-whatsapp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -56,11 +61,85 @@ async function sendWhatsAppNotification(phone, message) {
     if (response.ok && result.success) {
       return { success: true, sid: result.sid, phone: formattedPhone }
     } else {
-      return { success: false, error: result.error || 'Failed to send' }
+      return { success: false, error: result.error || 'Failed to send WhatsApp' }
     }
     
   } catch (error) {
     return { success: false, error: error.message }
+  }
+}
+
+// ✅ Send Email notification
+async function sendEmailNotification(email, type, paymentData) {
+  try {
+    if (!isEmailConfigured()) {
+      return { success: false, error: 'Email service not configured' }
+    }
+
+    if (!email || !email.includes('@')) {
+      return { success: false, error: 'Invalid or missing email address' }
+    }
+
+    console.log('📧 Sending email to:', email)
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://kostsaya.vercel.app'
+    
+    const response = await fetch(`${baseUrl}/api/send-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: email,
+        type: type,
+        data: paymentData
+      })
+    })
+
+    const result = await response.json()
+    
+    if (response.ok && result.success) {
+      return { success: true, emailId: result.emailId, email: email }
+    } else {
+      return { success: false, error: result.error || 'Failed to send email' }
+    }
+    
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+}
+
+// ✅ Get tenant email from database (if exists)
+async function getTenantEmail(payment) {
+  try {
+    // If payment has tenant_id, get email from tenants table
+    if (payment.tenant_id) {
+      const { data: tenant, error } = await supabase
+        .from('tenants')
+        .select('email')
+        .eq('id', payment.tenant_id)
+        .single()
+      
+      if (!error && tenant?.email) {
+        return tenant.email
+      }
+    }
+    
+    // Fallback: try to find tenant by phone number
+    if (payment.phone) {
+      const { data: tenantByPhone, error } = await supabase
+        .from('tenants')
+        .select('email')
+        .eq('phone', payment.phone)
+        .single()
+      
+      if (!error && tenantByPhone?.email) {
+        return tenantByPhone.email
+      }
+    }
+    
+    return null
+  } catch (error) {
+    console.log('⚠️ Error getting tenant email:', error.message)
+    return null
   }
 }
 
@@ -79,7 +158,7 @@ export default async function handler(req, res) {
   }
 
   console.log('🚀 Verify Payment API called')
-  const { id, action } = req.body
+  const { id, action, admin_notes } = req.body
 
   // Validation
   if (!id || !action || !['success', 'rejected'].includes(action)) {
@@ -89,8 +168,15 @@ export default async function handler(req, res) {
     })
   }
 
+  // Check environment
+  if (!supabaseUrl || !serviceKey) {
+    return res.status(500).json({ error: 'Server configuration error' })
+  }
+
   try {
-    // ✅ Get payment data
+    console.log('🔍 Fetching payment:', id)
+    
+    // Get payment data
     const { data: payment, error: fetchError } = await supabase
       .from('payments')
       .select('*')
@@ -101,14 +187,23 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'Payment not found' })
     }
 
-    // ✅ Update payment status
+    console.log('✅ Payment found:', {
+      id: payment.id,
+      tenant_name: payment.tenant_name,
+      phone: payment.phone
+    })
+
+    // Update payment status
     const newStatus = action === 'success' ? 'success' : 'rejected'
     
+    console.log('🔄 Updating payment status to:', newStatus)
+
     const { error: updateError } = await supabase
       .from('payments')
       .update({
         status: newStatus,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        admin_notes: admin_notes || null
       })
       .eq('id', id)
 
@@ -116,11 +211,32 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Database update failed' })
     }
 
-    // ✅ Send WhatsApp notification
-    let whatsappResult = { success: false, error: 'Phone number missing' }
-    
+    console.log('✅ Payment status updated successfully')
+
+    // ✅ Prepare notification data
+    const notificationData = {
+      tenant_name: payment.tenant_name,
+      month: payment.month,
+      room_number: payment.room_number,
+      phone: payment.phone,
+      receipt_url: payment.receipt_url,
+      admin_notes: admin_notes
+    }
+
+    // ✅ Get tenant email
+    const tenantEmail = await getTenantEmail(payment)
+    console.log('📧 Tenant email:', tenantEmail || 'Not found')
+
+    // ✅ Send notifications concurrently
+    const notifications = {
+      whatsapp: { success: false, error: 'Not attempted' },
+      email: { success: false, error: 'Not attempted' }
+    }
+
+    // Prepare WhatsApp message
+    let whatsappMessage = ''
     if (payment.phone) {
-      const message = action === 'success' 
+      whatsappMessage = action === 'success' 
         ? `✅ *PEMBAYARAN DITERIMA*
 
 Halo ${payment.tenant_name}! 👋
@@ -128,13 +244,13 @@ Halo ${payment.tenant_name}! 👋
 Pembayaran Anda telah *BERHASIL* diverifikasi:
 
 📋 *Detail:*
-- Nama: ${payment.tenant_name}
-- Bulan: ${payment.month}
+• Nama: ${payment.tenant_name}
+• Bulan: ${payment.month}
 ${payment.room_number ? `• Kamar: ${payment.room_number}` : ''}
 
 ✅ Status: *LUNAS*
 
-Terima kasih atas pembayaran tepat waktu! 🙏
+${admin_notes ? `📝 *Catatan:* ${admin_notes}\n\n` : ''}Terima kasih atas pembayaran tepat waktu! 🙏
 
 ---
 *Kost Pak Trisno*
@@ -146,23 +262,73 @@ Halo ${payment.tenant_name},
 Maaf, pembayaran Anda *DITOLAK*:
 
 📋 *Detail:*
-- Nama: ${payment.tenant_name}
-- Bulan: ${payment.month}
+• Nama: ${payment.tenant_name}
+• Bulan: ${payment.month}
+${payment.room_number ? `• Kamar: ${payment.room_number}` : ''}
 
 ❌ Status: *DITOLAK*
 
-Silakan hubungi admin untuk klarifikasi atau kirim ulang bukti transfer yang jelas.
+${admin_notes ? `📝 *Alasan:* ${admin_notes}\n\n` : ''}Silakan hubungi admin atau upload ulang bukti transfer yang jelas.
 
 📱 *Hubungi Admin:* +6281234567890
 
 ---
 *Kost Pak Trisno*`
-
-      whatsappResult = await sendWhatsAppNotification(payment.phone, message)
     }
 
-    // ✅ Final response
-    return res.status(200).json({
+    // Send notifications in parallel
+    const notificationPromises = []
+
+    // WhatsApp notification
+    if (payment.phone) {
+      notificationPromises.push(
+        sendWhatsAppNotification(payment.phone, whatsappMessage)
+          .then(result => { notifications.whatsapp = result })
+          .catch(error => { notifications.whatsapp = { success: false, error: error.message } })
+      )
+    }
+
+    // Email notification
+    if (tenantEmail) {
+      const emailType = action === 'success' ? 'payment_accepted' : 'payment_rejected'
+      notificationPromises.push(
+        sendEmailNotification(tenantEmail, emailType, notificationData)
+          .then(result => { notifications.email = result })
+          .catch(error => { notifications.email = { success: false, error: error.message } })
+      )
+    }
+
+    // Wait for all notifications to complete
+    await Promise.allSettled(notificationPromises)
+
+    // ✅ Generate response message
+    const successCount = [notifications.whatsapp.success, notifications.email.success].filter(Boolean).length
+    const totalAttempted = notificationPromises.length
+
+    let responseMessage = `✅ Payment ${newStatus}ed successfully!`
+    
+    if (totalAttempted === 0) {
+      responseMessage += `\n\n⚠️ No contact information available for notifications.\nPlease inform tenant manually: ${payment.phone || 'Phone not provided'}`
+    } else if (successCount === totalAttempted) {
+      responseMessage += `\n\n🎉 All notifications sent successfully!`
+      if (notifications.whatsapp.success) responseMessage += `\n📱 WhatsApp: ${notifications.whatsapp.phone}`
+      if (notifications.email.success) responseMessage += `\n📧 Email: ${tenantEmail}`
+    } else if (successCount > 0) {
+      responseMessage += `\n\n⚠️ Partial notification success (${successCount}/${totalAttempted}):`
+      if (notifications.whatsapp.success) responseMessage += `\n✅ WhatsApp: Sent to ${notifications.whatsapp.phone}`
+      else if (payment.phone) responseMessage += `\n❌ WhatsApp: ${notifications.whatsapp.error}`
+      
+      if (notifications.email.success) responseMessage += `\n✅ Email: Sent to ${tenantEmail}`
+      else if (tenantEmail) responseMessage += `\n❌ Email: ${notifications.email.error}`
+    } else {
+      responseMessage += `\n\n❌ All notifications failed. Please inform tenant manually:`
+      responseMessage += `\n📱 Phone: ${payment.phone || 'Not provided'}`
+      if (tenantEmail) responseMessage += `\n📧 Email: ${tenantEmail}`
+      responseMessage += `\n\n💡 Check service configurations (RESEND_API_KEY, TWILIO_* variables)`
+    }
+
+    // Final response
+    const response = {
       success: true,
       payment: {
         id: payment.id,
@@ -170,20 +336,34 @@ Silakan hubungi admin untuk klarifikasi atau kirim ulang bukti transfer yang jel
         phone: payment.phone,
         room_number: payment.room_number,
         month: payment.month,
-        status: newStatus
+        status: newStatus,
+        admin_notes: admin_notes
       },
-      whatsapp_notification: whatsappResult,
-      message: whatsappResult.success 
-        ? `Payment ${newStatus}ed successfully! WhatsApp sent to ${payment.phone}` 
-        : `Payment ${newStatus}ed successfully! WhatsApp failed: ${whatsappResult.error}`,
+      notifications: {
+        attempted: totalAttempted,
+        successful: successCount,
+        whatsapp: notifications.whatsapp,
+        email: notifications.email,
+        tenant_email: tenantEmail
+      },
+      message: responseMessage,
       timestamp: new Date().toISOString()
+    }
+
+    console.log('🎉 API Success with notifications:', {
+      whatsapp: notifications.whatsapp.success,
+      email: notifications.email.success,
+      total: `${successCount}/${totalAttempted}`
     })
 
+    return res.status(200).json(response)
+
   } catch (error) {
-    console.error('💥 Verify payment error:', error)
+    console.error('💥 Unexpected error:', error)
     return res.status(500).json({
       error: 'Internal server error',
-      message: error.message
+      message: error.message,
+      timestamp: new Date().toISOString()
     })
   }
 }
