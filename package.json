@@ -1,15 +1,11 @@
 {
-  "name": "next-kost-project",
+  "name": "kostsaya",
   "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "seed": "node scripts/seed_supabase.js",
-    "test-whatsapp": "node test-whatsapp.js",
-    "test-email": "curl -X POST http://localhost:3000/api/test-email -H 'Content-Type: application/json' -d '{\"to\":\"test@example.com\",\"type\":\"payment_accepted\"}'",
-    "deploy": "vercel --prod"
+    "start": "next start"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.38.0",
