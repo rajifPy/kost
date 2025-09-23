@@ -1,54 +1,48 @@
 // pages/api/whatsapp-status.js
-/**
- * Endpoint untuk menerima status delivery WhatsApp
- * Twilio akan GET ke endpoint ini untuk update status pesan
- */
+import { buffer } from 'micro';
+import { createClient } from '@supabase/supabase-js';
+
+export const config = { api: { bodyParser: false } }; // kita parse manual
+
+const supaAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
+  if (req.method !== 'POST') return res.status(405).end();
 
   try {
-    const {
-      MessageSid,
-      MessageStatus,  // sent, delivered, read, failed, undelivered
-      To,
-      From,
-      AccountSid,
-      ErrorCode,
-      ErrorMessage
-    } = req.query
+    // baca raw body (Twilio mengirim urlencoded)
+    const raw = (await buffer(req)).toString();
+    const params = Object.fromEntries(new URLSearchParams(raw));
+    // params sekarang berisi MessageSid, MessageStatus, To, From, Body, dll.
+    console.log('Twilio webhook params:', params);
 
-    console.log('WhatsApp status update:', {
-      messageSid: MessageSid,
-      status: MessageStatus,
-      to: To,
-      from: From,
-      error: ErrorCode ? `${ErrorCode}: ${ErrorMessage}` : null
-    })
+    // simpan ke message_logs
+    const insertPayload = {
+      direction: 'status',
+      channel: 'whatsapp',
+      phone_from: params.From || null,
+      phone_to: params.To || null,
+      body: params.Body || null,
+      metadata: params, // simpan raw untuk debugging
+      created_at: new Date().toISOString()
+    };
 
-    // Optional: Save status to database for monitoring
-    // await supabase.from('message_logs').insert({
-    //   message_sid: MessageSid,
-    //   status: MessageStatus,
-    //   recipient: To,
-    //   error_code: ErrorCode,
-    //   error_message: ErrorMessage,
-    //   timestamp: new Date().toISOString()
-    // })
+    const { data, error } = await supaAdmin.from('message_logs').insert(insertPayload).select();
+    if (error) console.error('insert error', error);
+    else console.log('inserted message_logs id=', data?.[0]?.id);
 
-    return res.status(200).json({ 
-      ok: true, 
-      message: 'Status received',
-      data: {
-        messageSid: MessageSid,
-        status: MessageStatus
-      }
-    })
-    
-  } catch (error) {
-    console.error('WhatsApp status callback error:', error)
-    return res.status(500).json({ error: error.message })
+    // optional: update payment by provider_payment_id (MessageSid)
+    if (params.MessageSid && params.MessageStatus) {
+      const { error: updErr } = await supaAdmin
+        .from('payments')
+        .update({ status: params.MessageStatus })
+        .eq('provider_payment_id', params.MessageSid);
+      if (updErr) console.error('update payment err', updErr);
+    }
+
+    return res.status(200).send('OK');
+  } catch (e) {
+    console.error('whatsapp-status error', e);
+    return res.status(500).json({ error: e.message });
   }
 }
