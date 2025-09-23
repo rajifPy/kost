@@ -1,52 +1,48 @@
 // pages/api/whatsapp-status.js
 import { createClient } from '@supabase/supabase-js';
 
+// server-side supabase client (service role)
 const supaAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   try {
-    // Next.js default body parser will populate req.body for
-    // application/x-www-form-urlencoded and application/json.
+    // Twilio sends urlencoded body; Next.js default parser also handles it
     const params = req.body || {};
 
     console.log('Twilio webhook params:', params);
 
-    const insertPayload = {
+    // save raw callback to message_logs for debugging
+    const insert = {
       direction: 'status',
       channel: 'whatsapp',
-      phone_from: params.From || params.from || null,
-      phone_to: params.To || params.to || null,
-      body: params.Body || params.body || null,
+      phone_from: params.From || null,
+      phone_to: params.To || null,
+      body: params.Body || null,
       metadata: params,
       created_at: new Date().toISOString()
     };
 
-    const { data, error } = await supaAdmin.from('message_logs').insert(insertPayload).select();
+    const { data, error } = await supaAdmin.from('message_logs').insert(insert).select();
+    if (error) console.error('insert message_logs error', error);
+    else console.log('inserted message_logs id=', data?.[0]?.id);
 
-    if (error) {
-      console.error('insert message_logs error', error);
-    } else {
-      console.log('inserted message_logs id=', data?.[0]?.id);
-    }
-
-    // update payment record jika ada MessageSid & MessageStatus
-    const sid = params.MessageSid || params.SmsSid || params.messageSid;
+    // optional: update payments based on MessageSid
+    const sid = params.MessageSid || params.SmsSid;
     const status = params.MessageStatus || params.status;
     if (sid && status) {
       const { error: updErr } = await supaAdmin
         .from('payments')
         .update({ status })
         .eq('provider_payment_id', sid);
-
       if (updErr) console.error('update payment err', updErr);
-      else console.log('Updated payments for sid=', sid, 'status=', status);
+      else console.log('Updated payment for sid', sid, '->', status);
     }
 
     return res.status(200).send('OK');
-  } catch (err) {
-    console.error('whatsapp-status handler error', err);
-    return res.status(500).json({ error: err.message });
+  } catch (e) {
+    console.error('whatsapp-status error', e);
+    return res.status(500).json({ error: e.message });
   }
 }
