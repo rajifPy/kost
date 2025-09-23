@@ -1,4 +1,4 @@
-// components/PaymentForm.js - Enhanced version with better error handling
+// components/PaymentForm.js - Enhanced version with Email notification
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
@@ -7,6 +7,7 @@ export default function PaymentForm(){
     tenant_id: '',
     tenant_name: '',
     phone: '',
+    email: '', // ✅ Added email field
     room_number: '',
     month: '',
     message: ''
@@ -28,7 +29,7 @@ export default function PaymentForm(){
       const { data, error } = await supabase
         .from('tenants')
         .select(`
-          id, name, phone, room_number,
+          id, name, phone, email, room_number,
           rooms (number, title)
         `)
         .eq('is_active', true)
@@ -36,7 +37,6 @@ export default function PaymentForm(){
       
       if (error) {
         console.error('❌ Fetch tenants error:', error)
-        // Don't throw error, just log it - form can still work manually
         setTenants([])
         return
       }
@@ -57,6 +57,7 @@ export default function PaymentForm(){
         tenant_id: tenantId,
         tenant_name: selectedTenant.name,
         phone: selectedTenant.phone,
+        email: selectedTenant.email || '', // ✅ Auto-fill email if available
         room_number: selectedTenant.rooms?.number || selectedTenant.room_number || ''
       })
     } else {
@@ -65,6 +66,7 @@ export default function PaymentForm(){
         tenant_id: '',
         tenant_name: '',
         phone: '',
+        email: '', // ✅ Reset email
         room_number: ''
       })
     }
@@ -73,6 +75,46 @@ export default function PaymentForm(){
   function previewFile(file){
     if(!file) return null
     return URL.createObjectURL(file)
+  }
+
+  // ✅ Send email confirmation after successful payment submission
+  async function sendSubmissionEmail(paymentData) {
+    try {
+      if (!form.email) {
+        console.log('📧 No email provided, skipping email notification')
+        return { success: false, error: 'No email provided' }
+      }
+
+      console.log('📧 Sending submission confirmation email...')
+
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: form.email,
+          type: 'payment_submitted',
+          data: {
+            tenant_name: paymentData.tenant_name,
+            month: paymentData.month,
+            room_number: paymentData.room_number,
+            phone: paymentData.phone
+          }
+        })
+      })
+
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        console.log('✅ Submission email sent successfully')
+        return { success: true, emailId: result.emailId }
+      } else {
+        console.error('❌ Submission email failed:', result.error)
+        return { success: false, error: result.error }
+      }
+    } catch (error) {
+      console.error('💥 Email send error:', error)
+      return { success: false, error: error.message }
+    }
   }
 
   async function handleSubmit(e){
@@ -98,6 +140,12 @@ export default function PaymentForm(){
     }
     if (!file) { 
       setError('Unggah bukti transfer terlebih dahulu')
+      return
+    }
+
+    // ✅ Email validation (optional but if provided must be valid)
+    if (form.email && form.email.trim() && !form.email.includes('@')) {
+      setError('Format email tidak valid')
       return
     }
     
@@ -150,6 +198,7 @@ export default function PaymentForm(){
         tenant_id: form.tenant_id || null,
         tenant_name: form.tenant_name.trim(),
         phone: form.phone.trim(),
+        email: form.email.trim() || null, // ✅ Include email in payment data
         room_number: form.room_number.trim() || null,
         month: form.month.trim(),
         message: form.message.trim() || null,
@@ -181,13 +230,29 @@ export default function PaymentForm(){
       }
       
       console.log('✅ Payment inserted successfully:', paymentInsert)
+
+      // ✅ Send email confirmation (non-blocking)
+      let emailResult = { success: false, error: 'Not attempted' }
+      if (form.email && form.email.trim()) {
+        emailResult = await sendSubmissionEmail(paymentData)
+      }
       
       // Success - reset form
-      setSuccess('✅ Bukti berhasil diunggah! Status: Pending. Admin akan memverifikasi pembayaran Anda.')
+      let successMessage = '✅ Bukti berhasil diunggah! Status: Pending. Admin akan memverifikasi pembayaran Anda.'
+      
+      if (emailResult.success) {
+        successMessage += `\n\n📧 Email konfirmasi telah dikirim ke ${form.email}`
+      } else if (form.email) {
+        successMessage += `\n\n⚠️ Email konfirmasi gagal dikirim, namun pembayaran tetap tercatat`
+      }
+
+      setSuccess(successMessage)
+      
       setForm({
         tenant_id: '',
         tenant_name: '',
         phone: '',
+        email: '', // ✅ Reset email
         room_number: '',
         month: '',
         message: ''
@@ -217,7 +282,7 @@ export default function PaymentForm(){
             <span className="text-red-500">❌</span>
             <div>
               <div className="font-medium">Error:</div>
-              <div className="text-sm">{error}</div>
+              <div className="text-sm whitespace-pre-line">{error}</div>
             </div>
           </div>
         </div>
@@ -230,7 +295,7 @@ export default function PaymentForm(){
             <span className="text-green-500">✅</span>
             <div>
               <div className="font-medium">Berhasil!</div>
-              <div className="text-sm">{success}</div>
+              <div className="text-sm whitespace-pre-line">{success}</div>
             </div>
           </div>
         </div>
@@ -277,6 +342,7 @@ export default function PaymentForm(){
                 <option key={tenant.id} value={tenant.id}>
                   {tenant.name} - {tenant.phone} 
                   {tenant.rooms?.number && ` (Kamar ${tenant.rooms.number})`}
+                  {tenant.email && ` - ${tenant.email}`}
                 </option>
               ))}
             </select>
@@ -292,6 +358,7 @@ export default function PaymentForm(){
               <div className="mt-2 p-3 bg-blue-50 rounded border text-sm">
                 <div><strong>Nama:</strong> {form.tenant_name}</div>
                 <div><strong>Phone:</strong> {form.phone}</div>
+                {form.email && <div><strong>Email:</strong> {form.email}</div>}
                 {form.room_number && <div><strong>Kamar:</strong> {form.room_number}</div>}
               </div>
             )}
@@ -311,6 +378,14 @@ export default function PaymentForm(){
               required
               value={form.phone}
               onChange={e => setForm({...form, phone: e.target.value})}
+              className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-primary-500"
+            />
+            {/* ✅ Email field */}
+            <input
+              type="email"
+              placeholder="Email (opsional, untuk notifikasi)"
+              value={form.email}
+              onChange={e => setForm({...form, email: e.target.value})}
               className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-primary-500"
             />
             <input
@@ -390,6 +465,17 @@ export default function PaymentForm(){
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ✅ Email notification info */}
+          {form.email && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-center gap-2 text-blue-800">
+                <span>📧</span>
+                <span className="font-medium text-sm">Email konfirmasi akan dikirim ke:</span>
+              </div>
+              <div className="text-sm text-blue-700 mt-1">{form.email}</div>
             </div>
           )}
 
