@@ -1,7 +1,7 @@
-// pages/admin/dashboard.js - FIXED VERSION with safe property access
+// pages/admin/dashboard.js - UPDATED with RoomManagement
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import RoomList from '../../components/RoomList'
+import RoomManagement from '../../components/RoomManagement'  // ✅ Import RoomManagement
 import TenantManagement from '../../components/TenantManagement'
 import { useRouter } from 'next/router'
 
@@ -13,7 +13,7 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview')
   const [error, setError] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
-  const [verifyLoading, setVerifyLoading] = useState(null) // Track which payment is being verified
+  const [verifyLoading, setVerifyLoading] = useState(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -395,23 +395,12 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* ✅ UPDATED: Use RoomManagement component instead of basic RoomList */}
       {activeTab === 'rooms' && (
-        <div>
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-semibold text-lg">Rooms Management</h3>
-            <button className="btn-primary">Add Room</button>
-          </div>
-          
-          {rooms.length > 0 ? (
-            <RoomList rooms={rooms} adminMode={true} />
-          ) : (
-            <div className="card text-center py-8">
-              <div className="text-gray-400 text-4xl mb-2">🏠</div>
-              <p className="text-gray-600">No rooms available yet.</p>
-              <button className="btn-primary mt-4">Add First Room</button>
-            </div>
-          )}
-        </div>
+        <RoomManagement 
+          rooms={rooms} 
+          onRefresh={fetchData}
+        />
       )}
 
       {activeTab === 'tenants' && (
