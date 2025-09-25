@@ -1,8 +1,9 @@
-// pages/admin/dashboard.js - UPDATED with RoomManagement
+// pages/admin/dashboard.js - UPDATED with Gallery Management
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import RoomManagement from '../../components/RoomManagement'  // ✅ Import RoomManagement
+import RoomManagement from '../../components/RoomManagement'
 import TenantManagement from '../../components/TenantManagement'
+import GalleryManagement from '../../components/GalleryManagement' // ✅ Import GalleryManagement
 import { useRouter } from 'next/router'
 
 export default function AdminDashboard() {
@@ -110,15 +111,12 @@ export default function AdminDashboard() {
     }, 300)
   }
 
-  // ✅ FIXED: Safe property access with null checks
   async function verifyPayment(payment, action) {
-    // ✅ Defensive programming - check if payment exists and has required properties
     if (!payment || !payment.id) {
       alert('❌ Error: Invalid payment data')
       return
     }
 
-    // ✅ Safe property access with fallbacks
     const paymentId = payment.id
     const paymentName = payment.tenant_name || 'Unknown Tenant'
     const paymentPhone = payment.phone || 'No phone'
@@ -136,7 +134,6 @@ export default function AdminDashboard() {
       return
     }
 
-    // Set loading state for this specific payment
     setVerifyLoading(paymentId)
 
     try {
@@ -166,10 +163,8 @@ export default function AdminDashboard() {
         throw new Error(data.error || `HTTP ${res.status}: ${res.statusText}`)
       }
       
-      // ✅ Show success message with safe property access
       const successMessage = data.message || `✅ Payment ${action}ed successfully!`
       
-      // ✅ Additional info if available
       let additionalInfo = ''
       if (data.notifications) {
         const { whatsapp, email, successful, attempted } = data.notifications
@@ -190,13 +185,11 @@ export default function AdminDashboard() {
       
       alert(successMessage + additionalInfo)
       
-      // Refresh data to show updated status
       fetchData()
       
     } catch (error) {
       console.error('❌ Verify payment error:', error)
       
-      // ✅ User-friendly error messages
       let errorMessage = '❌ Error verifying payment:\n'
       
       if (error.message.includes('fetch')) {
@@ -215,7 +208,6 @@ export default function AdminDashboard() {
       
       alert(errorMessage)
     } finally {
-      // Clear loading state
       setVerifyLoading(null)
     }
   }
@@ -325,9 +317,9 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* ✅ UPDATED: Add Gallery tab */}
       <div className="flex border-b mb-6 overflow-x-auto">
-        {['overview', 'rooms', 'tenants', 'payments'].map((tab) => (
+        {['overview', 'rooms', 'tenants', 'payments', 'gallery'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -337,6 +329,7 @@ export default function AdminDashboard() {
                 : 'border-transparent hover:text-primary-600'
             }`}
           >
+            {tab === 'gallery' && '📷 '}
             {tab}
             {tab === 'rooms' && ` (${rooms.length})`}
             {tab === 'payments' && ` (${payments.length})`}
@@ -395,7 +388,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* ✅ UPDATED: Use RoomManagement component instead of basic RoomList */}
       {activeTab === 'rooms' && (
         <RoomManagement 
           rooms={rooms} 
@@ -407,12 +399,16 @@ export default function AdminDashboard() {
         <TenantManagement rooms={rooms} />
       )}
 
+      {/* ✅ NEW: Gallery Management Tab */}
+      {activeTab === 'gallery' && (
+        <GalleryManagement />
+      )}
+
       {activeTab === 'payments' && (
         <div>
           <h3 className="font-semibold mb-4 text-lg">Payments Management</h3>
           <div className="space-y-3">
             {payments.map(payment => {
-              // ✅ Safe property access with fallbacks
               const paymentId = payment?.id
               const tenantName = payment?.tenant_name || 'Unknown Tenant'
               const tenantPhone = payment?.phone || 'No phone provided'
