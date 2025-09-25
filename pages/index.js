@@ -39,7 +39,7 @@ export default function Home(){
       <section className="mb-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <div>
-            <h1 className="text-3xl font-bold text-primary-700">Kost Pak Trisno — Nyaman & Terjangkau</h1>
+            <h1 className="text-3xl font-bold text-primary-700">Kost Pak Anda — Nyaman & Terjangkau</h1>
             <p className="mt-3 text-gray-600">Temukan kamar yang cocok, lihat fasilitas, harga, dan lakukan pembayaran dengan mudah.</p>
             <div className="mt-4 flex gap-3">
               <a href="/payment" className="btn-primary">Bayar Sewa</a>
@@ -82,22 +82,6 @@ export default function Home(){
         )}
 
         {!loading && !error && rooms.length > 0 && <RoomList rooms={rooms} />}
-      </section>
-
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold mb-4">Review Pengguna</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="card">
-            <div className="font-semibold">Aisyah</div>
-            <div className="text-sm text-gray-600">"Lingkungannya rapi, owner ramah"</div>
-            <div className="text-sm mt-2">Rating: ⭐⭐⭐⭐⭐</div>
-          </div>
-          <div className="card">
-            <div className="font-semibold">Budi</div>
-            <div className="text-sm text-gray-600">"Dekat kampus, pas untuk mahasiswa"</div>
-            <div className="text-sm mt-2">Rating: ⭐⭐⭐⭐</div>
-          </div>
-        </div>
       </section>
 
       <section className="mt-8">
