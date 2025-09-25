@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import RoomList from '../components/RoomList'
+import PhotoGallery from '../components/PhotoGallery'
 import MapEmbed from '../components/MapEmbed'
 
 export default function Home(){
@@ -36,6 +37,7 @@ export default function Home(){
 
   return (
     <div>
+      {/* Hero Section */}
       <section className="mb-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <div>
@@ -60,7 +62,11 @@ export default function Home(){
         </div>
       </section>
 
-      <section id="rooms">
+      {/* Photo Gallery Section */}
+      <PhotoGallery />
+
+      {/* Rooms Section */}
+      <section id="rooms" className="mt-12">
         <h2 className="text-xl font-semibold mb-4">List Kamar</h2>
 
         {loading && (
@@ -84,7 +90,8 @@ export default function Home(){
         {!loading && !error && rooms.length > 0 && <RoomList rooms={rooms} />}
       </section>
 
-      <section className="mt-8">
+      {/* Location Section */}
+      <section className="mt-12">
         <h2 className="text-xl font-semibold mb-4">Lokasi</h2>
 
         {/* Pakai MapEmbed component untuk menampilkan peta embed yg sudah kamu berikan */}
