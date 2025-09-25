@@ -1,4 +1,4 @@
-// components/GalleryManagement.js
+// components/GalleryManagement.js - UPDATED with Local File Upload
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
@@ -7,6 +7,8 @@ export default function GalleryManagement() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [uploadLoading, setUploadLoading] = useState(false)
+  const [selectedFile, setSelectedFile] = useState(null)
   const [newItem, setNewItem] = useState({
     title: '',
     description: '',
@@ -34,6 +36,48 @@ export default function GalleryManagement() {
     }
   }
 
+  // Upload file to Supabase Storage
+  async function uploadImageFile(file) {
+    if (!file) return null
+    
+    setUploadLoading(true)
+    
+    try {
+      // Generate unique filename
+      const fileExt = file.name.split('.').pop()
+      const fileName = `gallery_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
+      
+      console.log('📤 Uploading gallery image:', fileName)
+      
+      // Upload to gallery bucket (create if doesn't exist)
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('gallery')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+      
+      if (uploadError) {
+        console.error('❌ Upload error:', uploadError)
+        throw new Error(`Upload failed: ${uploadError.message}`)
+      }
+      
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('gallery')
+        .getPublicUrl(uploadData.path)
+      
+      console.log('✅ Image uploaded successfully:', urlData.publicUrl)
+      return urlData.publicUrl
+      
+    } catch (error) {
+      console.error('💥 Upload error:', error)
+      throw error
+    } finally {
+      setUploadLoading(false)
+    }
+  }
+
   async function handleAddItem(e) {
     e.preventDefault()
     setLoading(true)
@@ -44,12 +88,27 @@ export default function GalleryManagement() {
         alert('Title is required')
         return
       }
-      if (!newItem.image_url.trim()) {
-        alert('Image URL is required')
+      
+      let imageUrl = newItem.image_url.trim()
+      
+      // If file is selected, upload it first
+      if (selectedFile) {
+        console.log('📤 Uploading selected file...')
+        imageUrl = await uploadImageFile(selectedFile)
+        
+        if (!imageUrl) {
+          throw new Error('Failed to upload image')
+        }
+      }
+      
+      // Validate we have an image URL (either uploaded or entered manually)
+      if (!imageUrl) {
+        alert('Please either upload an image file or enter an image URL')
         return
       }
-      if (!newItem.image_url.startsWith('http')) {
-        alert('Please enter a valid HTTP/HTTPS URL')
+      
+      if (!imageUrl.startsWith('http')) {
+        alert('Please enter a valid HTTP/HTTPS URL or upload a file')
         return
       }
 
@@ -60,7 +119,7 @@ export default function GalleryManagement() {
       const { error } = await supabase.from('gallery').insert([{
         title: newItem.title.trim(),
         description: newItem.description.trim(),
-        image_url: newItem.image_url.trim(),
+        image_url: imageUrl,
         sort_order: sortOrder,
         is_active: newItem.is_active
       }])
@@ -71,8 +130,13 @@ export default function GalleryManagement() {
       setNewItem({
         title: '', description: '', image_url: '', sort_order: 0, is_active: true
       })
+      setSelectedFile(null)
       setShowAddModal(false)
       fetchGalleryItems()
+      
+      // Reset file input
+      const fileInput = document.querySelector('input[type="file"]')
+      if (fileInput) fileInput.value = ''
       
     } catch (error) {
       console.error('Add gallery item error:', error)
@@ -91,11 +155,24 @@ export default function GalleryManagement() {
         alert('Title is required')
         return
       }
-      if (!editingItem.image_url.trim()) {
+      
+      let imageUrl = editingItem.image_url.trim()
+      
+      // If new file is selected, upload it
+      if (selectedFile) {
+        console.log('📤 Uploading new file for edit...')
+        imageUrl = await uploadImageFile(selectedFile)
+        
+        if (!imageUrl) {
+          throw new Error('Failed to upload new image')
+        }
+      }
+      
+      if (!imageUrl) {
         alert('Image URL is required')
         return
       }
-      if (!editingItem.image_url.startsWith('http')) {
+      if (!imageUrl.startsWith('http')) {
         alert('Please enter a valid HTTP/HTTPS URL')
         return
       }
@@ -105,7 +182,7 @@ export default function GalleryManagement() {
         .update({
           title: editingItem.title.trim(),
           description: editingItem.description.trim(),
-          image_url: editingItem.image_url.trim(),
+          image_url: imageUrl,
           sort_order: editingItem.sort_order || 0,
           is_active: editingItem.is_active,
           updated_at: new Date().toISOString()
@@ -116,7 +193,12 @@ export default function GalleryManagement() {
 
       alert('Gallery item updated successfully!')
       setEditingItem(null)
+      setSelectedFile(null)
       fetchGalleryItems()
+      
+      // Reset file input
+      const fileInput = document.querySelector('input[type="file"]')
+      if (fileInput) fileInput.value = ''
       
     } catch (error) {
       console.error('Update gallery item error:', error)
@@ -133,6 +215,9 @@ export default function GalleryManagement() {
       setLoading(true)
       const { error } = await supabase.from('gallery').delete().eq('id', item.id)
       if (error) throw error
+
+      // Note: We're not deleting the actual file from storage as it might be referenced elsewhere
+      // You can implement file cleanup later if needed
 
       alert('Gallery item deleted successfully!')
       fetchGalleryItems()
@@ -179,6 +264,45 @@ export default function GalleryManagement() {
     }
   }
 
+  // File handling functions
+  function handleFileSelect(e) {
+    const file = e.target.files[0]
+    if (!file) {
+      setSelectedFile(null)
+      return
+    }
+    
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+    if (!allowedTypes.includes(file.type)) {
+      alert('Please select a valid image file (JPG, PNG, WebP)')
+      e.target.value = ''
+      return
+    }
+    
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024
+    if (file.size > maxSize) {
+      alert('File size too large. Maximum 5MB allowed.')
+      e.target.value = ''
+      return
+    }
+    
+    setSelectedFile(file)
+    
+    // Clear manual URL input when file is selected
+    if (editingItem) {
+      setEditingItem({...editingItem, image_url: ''})
+    } else {
+      setNewItem({...newItem, image_url: ''})
+    }
+  }
+
+  function previewSelectedFile() {
+    if (!selectedFile) return null
+    return URL.createObjectURL(selectedFile)
+  }
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -217,24 +341,78 @@ export default function GalleryManagement() {
                 rows="3"
               />
               
-              <div>
+              {/* File Upload Section */}
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+                <div className="text-sm font-medium mb-2">Upload Image (Recommended)</div>
                 <input
-                  placeholder="Image URL * (https://example.com/image.jpg)"
-                  required
-                  type="url"
-                  value={newItem.image_url}
-                  onChange={e => setNewItem({...newItem, image_url: e.target.value})}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
                   className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
                 />
                 <div className="text-xs text-gray-500 mt-1">
-                  Use direct image URLs from Unsplash, Imgur, or your hosting service
+                  Supported: JPG, PNG, WebP. Maximum: 5MB
+                </div>
+                
+                {/* File Preview */}
+                {selectedFile && (
+                  <div className="mt-3 border rounded-lg p-3 bg-gray-50">
+                    <div className="text-sm font-medium mb-2">Selected File:</div>
+                    <div className="flex items-center gap-3">
+                      <img 
+                        src={previewSelectedFile()} 
+                        alt="Preview" 
+                        className="w-16 h-16 object-cover rounded border"
+                      />
+                      <div>
+                        <div className="text-sm font-medium truncate">{selectedFile.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* OR Manual URL Input */}
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="bg-white px-2 text-gray-500">or enter URL manually</span>
                 </div>
               </div>
+              
+              <div>
+                <input
+                  placeholder="Image URL (https://example.com/image.jpg)"
+                  type="url"
+                  value={newItem.image_url}
+                  onChange={e => {
+                    setNewItem({...newItem, image_url: e.target.value})
+                    if (e.target.value.trim()) {
+                      setSelectedFile(null)
+                      // Reset file input
+                      const fileInput = document.querySelector('input[type="file"]')
+                      if (fileInput) fileInput.value = ''
+                    }
+                  }}
+                  className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
+                  disabled={selectedFile !== null}
+                />
+                {selectedFile && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    File upload selected. Clear file to enter URL manually.
+                  </div>
+                )}
+              </div>
 
-              {/* Image Preview */}
-              {newItem.image_url && newItem.image_url.startsWith('http') && (
+              {/* URL Image Preview */}
+              {!selectedFile && newItem.image_url && newItem.image_url.startsWith('http') && (
                 <div className="border rounded-lg p-3 bg-gray-50">
-                  <div className="text-sm font-medium mb-2">Preview:</div>
+                  <div className="text-sm font-medium mb-2">URL Preview:</div>
                   <img 
                     src={newItem.image_url} 
                     alt="Preview" 
@@ -273,10 +451,10 @@ export default function GalleryManagement() {
               <div className="flex gap-2 pt-4">
                 <button 
                   type="submit" 
-                  disabled={loading}
+                  disabled={loading || uploadLoading}
                   className="btn-primary flex-1"
                 >
-                  {loading ? 'Adding...' : 'Add Photo'}
+                  {uploadLoading ? 'Uploading...' : loading ? 'Adding...' : 'Add Photo'}
                 </button>
                 <button 
                   type="button" 
@@ -284,6 +462,7 @@ export default function GalleryManagement() {
                     setNewItem({
                       title: '', description: '', image_url: '', sort_order: 0, is_active: true
                     })
+                    setSelectedFile(null)
                     setShowAddModal(false)
                   }}
                   className="px-4 py-2 border rounded-lg flex-1 hover:bg-gray-50"
@@ -296,7 +475,7 @@ export default function GalleryManagement() {
         </div>
       )}
 
-      {/* Edit Item Modal */}
+      {/* Edit Item Modal - Similar structure with file upload support */}
       {editingItem && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -319,17 +498,8 @@ export default function GalleryManagement() {
                 rows="3"
               />
               
-              <input
-                placeholder="Image URL *"
-                required
-                type="url"
-                value={editingItem.image_url}
-                onChange={e => setEditingItem({...editingItem, image_url: e.target.value})}
-                className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
-              />
-
-              {/* Image Preview */}
-              {editingItem.image_url && editingItem.image_url.startsWith('http') && (
+              {/* Current Image Preview */}
+              {editingItem.image_url && !selectedFile && (
                 <div className="border rounded-lg p-3 bg-gray-50">
                   <div className="text-sm font-medium mb-2">Current Image:</div>
                   <img 
@@ -339,6 +509,47 @@ export default function GalleryManagement() {
                   />
                 </div>
               )}
+              
+              {/* File Upload Section */}
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+                <div className="text-sm font-medium mb-2">Replace with New Image</div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
+                />
+                
+                {/* New File Preview */}
+                {selectedFile && (
+                  <div className="mt-3 border rounded-lg p-3 bg-green-50">
+                    <div className="text-sm font-medium mb-2 text-green-700">New File Selected:</div>
+                    <div className="flex items-center gap-3">
+                      <img 
+                        src={previewSelectedFile()} 
+                        alt="New Preview" 
+                        className="w-16 h-16 object-cover rounded border"
+                      />
+                      <div>
+                        <div className="text-sm font-medium truncate">{selectedFile.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Manual URL Edit */}
+              <input
+                placeholder="Or edit Image URL directly"
+                type="url"
+                value={editingItem.image_url}
+                onChange={e => setEditingItem({...editingItem, image_url: e.target.value})}
+                className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-primary-500"
+                disabled={selectedFile !== null}
+              />
 
               <div className="grid grid-cols-2 gap-4">
                 <input
@@ -363,14 +574,17 @@ export default function GalleryManagement() {
               <div className="flex gap-2 pt-4">
                 <button 
                   type="submit" 
-                  disabled={loading}
+                  disabled={loading || uploadLoading}
                   className="btn-primary flex-1"
                 >
-                  {loading ? 'Updating...' : 'Update Photo'}
+                  {uploadLoading ? 'Uploading...' : loading ? 'Updating...' : 'Update Photo'}
                 </button>
                 <button 
                   type="button" 
-                  onClick={() => setEditingItem(null)}
+                  onClick={() => {
+                    setEditingItem(null)
+                    setSelectedFile(null)
+                  }}
                   className="px-4 py-2 border rounded-lg flex-1 hover:bg-gray-50"
                 >
                   Cancel
