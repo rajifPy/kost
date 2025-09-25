@@ -1,360 +1,116 @@
-// components/PhotoGallery.js - Updated to use database
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import RoomList from '../components/RoomList'
+import PhotoGallery from '../components/PhotoGallery'
+import MapEmbed from '../components/MapEmbed'
 
-export default function PhotoGallery() {
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [isAutoPlaying, setIsAutoPlaying] = useState(true)
-  const [galleryImages, setGalleryImages] = useState([])
+export default function Home(){
+  const [rooms, setRooms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
-    fetchGalleryImages()
-  }, [])
+  useEffect(()=>{ fetchRooms() }, [])
 
-  async function fetchGalleryImages() {
+  async function fetchRooms(){
+    setLoading(true)
+    setError(null)
     try {
-      setLoading(true)
-      setError(null)
-      
-      const { data, error } = await supabase
-        .from('gallery')
-        .select('*')
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true })
-      
-      if (error) throw error
-      
-      // Transform data to match expected format
-      const transformedImages = (data || []).map(item => ({
-        url: item.image_url,
-        title: item.title,
-        description: item.description,
-        id: item.id
-      }))
-      
-      setGalleryImages(transformedImages)
-      
-      // Reset current index if it's out of range
-      if (transformedImages.length > 0 && currentIndex >= transformedImages.length) {
-        setCurrentIndex(0)
+      if (!supabase) {
+        throw new Error('Supabase client tidak dikonfigurasi. Periksa NEXT_PUBLIC_SUPABASE_URL & NEXT_PUBLIC_SUPABASE_ANON_KEY')
       }
-      
-    } catch (error) {
-      console.error('Fetch gallery error:', error)
-      setError('Failed to load gallery images')
-      
-      // Fallback to sample images if database fails
-      setGalleryImages([
-        {
-          url: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=800&h=500&fit=crop',
-          title: 'Sample Room',
-          description: 'This is a sample image. Admin can add photos via dashboard.'
-        }
-      ])
+      const { data, error } = await supabase.from('rooms').select('*').order('created_at', {ascending:false})
+      if(error) {
+        console.error(error)
+        setError('Gagal mengambil data kamar.')
+        setRooms([])
+      } else {
+        setRooms(data || [])
+      }
+    } catch (e) {
+      console.error(e)
+      setError(e.message || 'Terjadi kesalahan')
+      setRooms([])
     } finally {
       setLoading(false)
     }
   }
 
-  // Auto-play functionality
-  useEffect(() => {
-    if (!isAutoPlaying || galleryImages.length <= 1) return
-
-    const interval = setInterval(() => {
-      setCurrentIndex(prevIndex => 
-        prevIndex === galleryImages.length - 1 ? 0 : prevIndex + 1
-      )
-    }, 4000) // Change every 4 seconds
-
-    return () => clearInterval(interval)
-  }, [isAutoPlaying, galleryImages.length, currentIndex])
-
-  const goToSlide = (index) => {
-    setCurrentIndex(index)
-    setIsAutoPlaying(false)
-    // Resume auto-play after 10 seconds of inactivity
-    setTimeout(() => setIsAutoPlaying(true), 10000)
-  }
-
-  const goToPrevious = () => {
-    const newIndex = currentIndex === 0 ? galleryImages.length - 1 : currentIndex - 1
-    goToSlide(newIndex)
-  }
-
-  const goToNext = () => {
-    const newIndex = currentIndex === galleryImages.length - 1 ? 0 : currentIndex + 1
-    goToSlide(newIndex)
-  }
-
-  // Don't render if no images
-  if (loading) {
-    return (
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold text-primary-700 mb-6">Galeri Foto Kost</h2>
-        <div className="card">
-          <div className="h-64 md:h-80 bg-gray-100 rounded-lg animate-pulse flex items-center justify-center">
-            <div className="text-gray-400">
-              <div className="text-4xl mb-2">📷</div>
-              <div>Loading gallery...</div>
-            </div>
-          </div>
-        </div>
-      </section>
-    )
-  }
-
-  if (error && galleryImages.length === 0) {
-    return (
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold text-primary-700 mb-6">Galeri Foto Kost</h2>
-        <div className="card text-center py-12">
-          <div className="text-gray-400 text-4xl mb-2">📷</div>
-          <p className="text-gray-600 mb-2">Gallery is not available</p>
-          <p className="text-sm text-gray-500">{error}</p>
-          <button 
-            onClick={fetchGalleryImages}
-            className="btn-secondary mt-3"
-          >
-            Retry
-          </button>
-        </div>
-      </section>
-    )
-  }
-
-  if (galleryImages.length === 0) {
-    return (
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold text-primary-700 mb-6">Galeri Foto Kost</h2>
-        <div className="card text-center py-12">
-          <div className="text-gray-400 text-4xl mb-2">📷</div>
-          <p className="text-gray-600">Gallery photos will appear here once admin adds them</p>
-        </div>
-      </section>
-    )
-  }
-
   return (
-    <section className="mt-8">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-primary-700">
-          Galeri Foto Kost
-          <span className="text-sm font-normal text-gray-500 ml-2">
-            ({galleryImages.length} foto)
-          </span>
-        </h2>
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <div className={`w-2 h-2 rounded-full ${isAutoPlaying && galleryImages.length > 1 ? 'bg-green-500' : 'bg-gray-400'}`}></div>
-          {galleryImages.length > 1 ? (isAutoPlaying ? 'Auto-play aktif' : 'Manual') : 'Single image'}
+    <div>
+      {/* Hero Section */}
+      <section className="mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-primary-700">Kost Pak Anda — Nyaman & Terjangkau</h1>
+            <p className="mt-3 text-gray-600">Temukan kamar yang cocok, lihat fasilitas, harga, dan lakukan pembayaran dengan mudah.</p>
+            <div className="mt-4 flex gap-3">
+              <a href="/payment" className="btn-primary">Bayar Sewa</a>
+              <a href="#rooms" className="px-4 py-2 border rounded-lg">Lihat Kamar</a>
+            </div>
+          </div>
+          <div>
+            <div className="card">
+              <h4 className="font-semibold">Info singkat</h4>
+              <ul className="mt-2 text-sm text-gray-600">
+                <li>Harga mulai dari Rp 500.000 / bulan</li>
+                <li>Fasilitas Pribadi : Kasur, Kipas, Almari, Listrik, Air</li>
+                <li>Fasilitas Umum : Dapur, Kamar Mandi Luar, Jemuran</li>
+                <li>Lokasi: dekat kampus </li>
+              </ul>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="card overflow-hidden">
-        {/* Main Gallery Container */}
-        <div className="relative group">
-          {/* Image Container with Smooth Transitions */}
-          <div className="relative h-64 md:h-80 overflow-hidden rounded-lg bg-gray-100">
-            <div 
-              className="flex transition-transform duration-700 ease-in-out h-full"
-              style={{ transform: `translateX(-${currentIndex * 100}%)` }}
-            >
-              {galleryImages.map((image, index) => (
-                <div key={image.id || index} className="w-full flex-shrink-0 relative">
-                  <img
-                    src={image.url}
-                    alt={image.title}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      console.warn('Image failed to load:', image.url)
-                      e.target.src = 'https://via.placeholder.com/800x500/e5e7eb/6b7280?text=Foto+Tidak+Tersedia'
-                    }}
-                  />
-                  {/* Gradient Overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"></div>
-                  
-                  {/* Image Info */}
-                  <div className="absolute bottom-4 left-4 right-4 text-white">
-                    <h3 className="font-semibold text-lg mb-1">{image.title}</h3>
-                    <p className="text-sm opacity-90">{image.description}</p>
-                  </div>
-                </div>
-              ))}
+      {/* Photo Gallery Section */}
+      <PhotoGallery />
+
+      {/* Rooms Section */}
+      <section id="rooms" className="mt-12">
+        <h2 className="text-xl font-semibold mb-4">List Kamar</h2>
+
+        {loading && (
+          <div className="card">
+            <div className="skeleton h-6 w-48 mb-3" />
+            <div className="grid grid-cols-1 gap-3">
+              <div className="skeleton h-20 rounded" />
+              <div className="skeleton h-20 rounded" />
             </div>
+          </div>
+        )}
 
-            {/* Navigation Arrows - Show on hover and only if more than 1 image */}
-            {galleryImages.length > 1 && (
-              <>
-                <button 
-                  onClick={goToPrevious}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                
-                <button 
-                  onClick={goToNext}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </>
-            )}
+        {error && <div className="card text-red-600">{error}</div>}
 
-            {/* Image Counter - Only show if more than 1 image */}
-            {galleryImages.length > 1 && (
-              <div className="absolute top-4 right-4 bg-black/30 backdrop-blur-sm text-white px-3 py-1 rounded-full text-sm">
-                {currentIndex + 1} / {galleryImages.length}
-              </div>
-            )}
+        {!loading && !error && rooms.length === 0 && (
+          <div className="card">
+            <p className="text-gray-600">Belum ada kamar yang terdaftar. Admin dapat menambahkan kamar lewat dashboard.</p>
+          </div>
+        )}
+
+        {!loading && !error && rooms.length > 0 && <RoomList rooms={rooms} />}
+      </section>
+
+      {/* Location Section */}
+      <section className="mt-12">
+        <h2 className="text-xl font-semibold mb-4">Lokasi</h2>
+
+        {/* Pakai MapEmbed component untuk menampilkan peta embed yg sudah kamu berikan */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <MapEmbed src={"https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1978.883335070079!2d112.77890030865018!3d-7.267372706576134!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2dd7fa27284874e3%3A0xdb4da342cefbd226!2sDharma%20Husada%20Indah%20Utara%20Mulyorejo%20Tengah%20Gg.%20V%20No.21%20XIV%20No.%20Depan%20U-416%2C%20Mulyorejo%2C%20Kec.%20Mulyorejo%2C%20Surabaya%2C%20Jawa%20Timur%2060115!5e0!3m2!1sid!2sid!4v1758474751866!5m2!1sid!2sid"} />
           </div>
 
-          {/* Dot Indicators - Only show if more than 1 image */}
-          {galleryImages.length > 1 && (
-            <div className="flex justify-center gap-2 mt-4">
-              {galleryImages.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => goToSlide(index)}
-                  className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                    index === currentIndex 
-                      ? 'bg-primary-500 scale-125' 
-                      : 'bg-gray-300 hover:bg-gray-400'
-                  }`}
-                />
-              ))}
+          <div className="card">
+            <h4 className="font-semibold mb-2">Alamat</h4>
+            <div className="text-sm text-gray-600">
+              Dharma Husada Indah Utara, Mulyorejo, Surabaya, Jawa Timur — Gg. V No.21 (Depan U-416)
             </div>
-          )}
-
-          {/* Thumbnail Preview - Hidden on mobile, only show if more than 1 image */}
-          {galleryImages.length > 1 && (
-            <div className="hidden md:flex gap-2 mt-4 overflow-x-auto pb-2">
-              {galleryImages.map((image, index) => (
-                <button
-                  key={image.id || index}
-                  onClick={() => goToSlide(index)}
-                  className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-all duration-300 ${
-                    index === currentIndex 
-                      ? 'border-primary-500 scale-110' 
-                      : 'border-transparent hover:border-gray-300'
-                  }`}
-                >
-                  <img
-                    src={image.url}
-                    alt={`Thumbnail ${image.title}`}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.target.src = 'https://via.placeholder.com/64x48/e5e7eb/6b7280?text=T'
-                    }}
-                  />
-                </button>
-              ))}
+            <div className="mt-3">
+              <a target="_blank" rel="noreferrer" className="text-primary-600 underline" href="https://www.google.com/maps/place/https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1978.883335070079!2d112.77890030865018!3d-7.267372706576134!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2dd7fa27284874e3%3A0xdb4da342cefbd226!2sDharma%20Husada%20Indah%20Utara%20Mulyorejo%20Tengah%20Gg.%20V%20No.21%20XIV%20No.%20Depan%20U-416%2C%20Mulyorejo%2C%20Kec.%20Mulyorejo%2C%20Surabaya%2C%20Jawa%20Timur%2060115!5e0!3m2!1sid!2sid!4v1758474751866!5m2!1sid!2sid">Buka di Google Maps</a>
             </div>
-          )}
-
-          {/* Progress Bar - Only show if auto-playing and more than 1 image */}
-          {isAutoPlaying && galleryImages.length > 1 && (
-            <div className="mt-3 h-1 bg-gray-200 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-primary-500 transition-all duration-100 ease-linear"
-                style={{ 
-                  width: `${((currentIndex + 1) / galleryImages.length) * 100}%`,
-                  animation: 'progressPulse 4s ease-in-out infinite'
-                }}
-              />
-            </div>
-          )}
+          </div>
         </div>
-
-        {/* Gallery Controls - Only show if more than 1 image */}
-        {galleryImages.length > 1 && (
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setIsAutoPlaying(!isAutoPlaying)}
-                className={`flex items-center gap-2 px-3 py-1 rounded-lg text-sm transition-colors ${
-                  isAutoPlaying 
-                    ? 'bg-green-100 text-green-700 hover:bg-green-200' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {isAutoPlaying ? (
-                  <>
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
-                    </svg>
-                    Pause
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                    Play
-                  </>
-                )}
-              </button>
-              
-              <span className="text-sm text-gray-500">
-                Swipe atau klik untuk navigasi
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={goToPrevious}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Previous"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              
-              <button
-                onClick={goToNext}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Next"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Single Image Info */}
-        {galleryImages.length === 1 && (
-          <div className="mt-4 pt-4 border-t border-gray-100 text-center text-sm text-gray-600">
-            📷 {galleryImages[0].title} - {galleryImages[0].description}
-          </div>
-        )}
-
-        {/* Refresh Button for Error Recovery */}
-        {error && (
-          <div className="mt-4 pt-4 border-t border-gray-100 text-center">
-            <button 
-              onClick={fetchGalleryImages}
-              className="btn-secondary text-sm"
-            >
-              🔄 Refresh Gallery
-            </button>
-          </div>
-        )}
-      </div>
-
-      <style jsx>{`
-        @keyframes progressPulse {
-          0%, 100% { opacity: 0.8; }
-          50% { opacity: 1; }
-        }
-      `}</style>
-    </section>
+      </section>
+    </div>
   )
 }
