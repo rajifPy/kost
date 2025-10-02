@@ -41,7 +41,7 @@ export default function Home(){
       <section className="mb-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <div>
-            <h1 className="text-3xl font-bold text-primary-700">Kost Pak Anda — Nyaman & Terjangkau</h1>
+            <h1 className="text-3xl font-bold text-primary-700">Kost Anda — Nyaman & Terjangkau</h1>
             <p className="mt-3 text-gray-600">Temukan kamar yang cocok, lihat fasilitas, harga, dan lakukan pembayaran dengan mudah.</p>
             <div className="mt-4 flex gap-3">
               <a href="/payment" className="btn-primary">Bayar Sewa</a>
