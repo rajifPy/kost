@@ -1,16 +1,65 @@
+// components/Header.js - Updated with Gallery navigation
 import Link from 'next/link'
+import { useRouter } from 'next/router'
 
-export default function Header(){
+export default function Header() {
+  const router = useRouter()
+  
+  const isActive = (path) => {
+    return router.pathname === path
+  }
+
   return (
-    <header className="backdrop-blur-sm bg-white/60 sticky top-0 z-50 border-b">
-      <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-        <Link href="/"><a className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-bold">K</div><span className="font-semibold text-lg text-primary-700">Kost</span></a></Link>
-        <nav className="flex items-center gap-4">
-          <Link href="/"><a className="text-sm hover:text-primary-600">Home</a></Link>
-          <Link href="/payment"><a className="text-sm hover:text-primary-600">Bayar</a></Link>
-          <Link href="/admin/login"><a className="text-sm px-3 py-1 border rounded-lg hover:bg-primary-50">Admin</a></Link>
-        </nav>
-      </div>
+    <header className="bg-white shadow-sm sticky top-0 z-50 border-b border-gray-100">
+      <nav className="container mx-auto px-4 py-4">
+        <div className="flex items-center justify-between">
+          {/* Logo */}
+          <Link href="/">
+            <span className="text-xl font-bold text-primary-700 cursor-pointer hover:text-primary-800 transition-colors">
+               Kost Anda
+            </span>
+          </Link>
+
+          {/* Navigation Links */}
+          <div className="flex items-center gap-2 md:gap-4">
+            <Link href="/">
+              <span className={`px-3 py-2 rounded-lg text-sm md:text-base font-medium transition-all cursor-pointer ${
+                isActive('/') 
+                  ? 'bg-primary-500 text-white shadow-sm' 
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}>
+                Home
+              </span>
+            </Link>
+
+            <Link href="/gallery">
+              <span className={`px-3 py-2 rounded-lg text-sm md:text-base font-medium transition-all cursor-pointer ${
+                isActive('/gallery') 
+                  ? 'bg-primary-500 text-white shadow-sm' 
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}>
+                Galeri Kost
+              </span>
+            </Link>
+
+            <Link href="/payment">
+              <span className={`px-3 py-2 rounded-lg text-sm md:text-base font-medium transition-all cursor-pointer ${
+                isActive('/payment') 
+                  ? 'bg-primary-500 text-white shadow-sm' 
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}>
+                Bayar Sewa
+              </span>
+            </Link>
+
+            <Link href="/admin/login">
+              <span className="px-3 py-2 rounded-lg text-sm md:text-base font-medium text-gray-600 hover:bg-gray-100 transition-all cursor-pointer">
+                🔐 Admin
+              </span>
+            </Link>
+          </div>
+        </div>
+      </nav>
     </header>
   )
 }
