@@ -192,14 +192,14 @@ Kost Pak Trisno
                   <li><strong>Bulan:</strong> ${data.month}</li>
                   ${data.room_number ? `<li><strong>Kamar:</strong> ${data.room_number}</li>` : ''}
                   <li><strong>Phone:</strong> ${data.phone}</li>
-                  <li><strong>Status:</strong> <span style="color: #f59e0b; font-weight: bold;">PENDING ⏳</span></li>
+                  <li><strong>Status:</strong> <span style="color: #f59e0b; font-weight: bold;">SUDAH BAYAR ☑️</span></li>
                   <li><strong>Waktu Upload:</strong> ${new Date().toLocaleString('id-ID')}</li>
                 </ul>
               </div>
 
               <div style="background: #fef3c7; padding: 20px; border-radius: 6px; margin: 20px 0;">
-                <h3 style="margin: 0 0 10px 0; color: #92400e;">⏳ Proses Selanjutnya:</h3>
-                <p style="margin: 0;">Admin akan memverifikasi pembayaran Anda dalam <strong>1x24 jam</strong>. Anda akan mendapat notifikasi email dan WhatsApp setelah verifikasi selesai.</p>
+                <h3 style="margin: 0 0 10px 0; color: #92400e;">Pemilik KOST</h3>
+                <p style="margin: 0;">Terima Kasih Sudah Melakukan Pembayaran Sewa kost <strong>🙏</strong>Semoga di berikan rezeki yang terus mengalir dan sukses dunia akhirat🤲</p>
               </div>
 
               <div style="background: #f8fafc; padding: 20px; border-radius: 6px; margin: 20px 0;">
