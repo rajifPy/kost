@@ -204,30 +204,41 @@ async function sendEmailDirect(email, type, paymentData) {
 // ✅ Get tenant email from database
 async function getTenantEmail(payment) {
   try {
+    // Priority 1: Email from payment record directly (if column exists)
+    if (payment.email && payment.email.includes('@')) {
+      console.log('📧 Using email from payment record:', payment.email)
+      return payment.email
+    }
+    
+    // Priority 2: Email from linked tenant
     if (payment.tenant_id) {
-      const { data: tenant, error } = await supabase
+      const { data: tenant } = await supabase
         .from('tenants')
         .select('email')
         .eq('id', payment.tenant_id)
         .single()
       
-      if (!error && tenant?.email) {
+      if (tenant?.email) {
+        console.log('📧 Using email from tenant record:', tenant.email)
         return tenant.email
       }
     }
     
+    // Priority 3: Email from tenant matched by phone
     if (payment.phone) {
-      const { data: tenantByPhone, error } = await supabase
+      const { data: tenantByPhone } = await supabase
         .from('tenants')
         .select('email')
         .eq('phone', payment.phone)
         .single()
       
-      if (!error && tenantByPhone?.email) {
+      if (tenantByPhone?.email) {
+        console.log('📧 Using email from tenant (matched by phone):', tenantByPhone.email)
         return tenantByPhone.email
       }
     }
     
+    console.log('⚠️ No email found for payment:', payment.id)
     return null
   } catch (error) {
     console.log('⚠️ Error getting tenant email:', error.message)
